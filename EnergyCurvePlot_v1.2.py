@@ -18,6 +18,10 @@ import pandas as pd
 import tksheet
 
 '''
+1.3 开发计划
+1. 预期加入excel支持功能，而不是单纯的json存储
+2. 加入针对配置文件的保存功能
+
 1.2 Update log
 
 1. Fixed the bug where circular patterns appeared below the line layer due to identical IDs.
