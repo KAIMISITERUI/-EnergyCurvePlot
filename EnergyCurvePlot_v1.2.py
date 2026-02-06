@@ -21,10 +21,11 @@ import pandas as pd
 '''
 1.3 版本更新日志
 
-1. 增加保存配置和读取配置选项，这样可以将页面中设置好的参数直接保存，不用反复修改.
+1. 增加保存配置和读取配置选项，可以将页面中设置好的参数直接保存，避免反复修改.
 2. 读取数据和保存数据的功能增加对xlsx和csv文件的支持.
 3. 保存cdxml文件现在可以选择保存位置.
-4. 增加了读取chemdraw文件风格的功能,现在可以选择读取自己常用风格的chemdraw文件,保存后也会是同样的风格。同时保存配置的时候也会被存储到配置信息里.
+4. 增加了读取chemdraw文件风格的功能,现在可以使用“Load CDXML Style'选择自己常用风格的chemdraw文件,读取后续保存的也会是同样的风格。同时保存配置的时候也会被存储到配置信息里.
+5. 增加了显示数字和显示文字的选项
 
 注意: 所有版本保存的 table_data.json 都是通用的, 可以被任何版本读取.
 
@@ -1644,7 +1645,9 @@ def interactive_bezier_curve():
             self.menu.add_command(label="Delete Row", command=self.delete_row)
             self.menu.add_command(label="Delete Column", command=self.delete_column)
             self.menu.add_command(label="Add Row (above)", command=self.add_row)
+            self.menu.add_command(label="Add Row (below)", command=self.add_row_below)
             self.menu.add_command(label="Add Column (left)", command=self.add_column)
+            self.menu.add_command(label="Add Column (right)", command=self.add_column_right)
 
             self.selected_item = None
             self.selected_column = None
@@ -1698,6 +1701,13 @@ def interactive_bezier_curve():
                 new_row_values = ('#000000', '#000000', '#000000') + ('',) * (num_columns - 3)
                 self.table.insert('', index, values=new_row_values)
 
+        def add_row_below(self):
+            if self.selected_item:
+                index = self.table.index(self.selected_item)
+                num_columns = len(self.table['columns'])
+                new_row_values = ('#000000', '#000000', '#000000') + ('',) * (num_columns - 3)
+                self.table.insert('', index + 1, values=new_row_values)
+
         def add_column(self):
             existing_columns = list(self.table['columns'])
             new_column = f'E{len(existing_columns) - 3}'
@@ -1713,6 +1723,23 @@ def interactive_bezier_curve():
                 for item in self.table.get_children():
                     values = list(self.table.item(item, 'values'))
                     values.insert(col_index, '')
+                    self.table.item(item, values=values)
+
+        def add_column_right(self):
+            existing_columns = list(self.table['columns'])
+            new_column = f'E{len(existing_columns) - 3}'
+            if self.selected_column:
+                col_index = int(self.selected_column.replace("#", "")) - 1
+                existing_columns.insert(col_index + 1, new_column)
+                self.columns = existing_columns[:3] + [f"E{i-3}" for i in range(4, len(existing_columns) + 1)]
+                self.table['columns'] = tuple(self.columns)
+                default_column_width = 100
+                for col in self.columns:
+                    self.table.heading(col, text=col)
+                    self.table.column(col, width=default_column_width, anchor='center', stretch=False)
+                for item in self.table.get_children():
+                    values = list(self.table.item(item, 'values'))
+                    values.insert(col_index + 1, '')
                     self.table.item(item, values=values)
 
     # 绑定放大和缩小事件处理函数到 Matplotlib 图表上
