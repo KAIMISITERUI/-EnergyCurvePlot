@@ -63,8 +63,6 @@ EnergyCurvePlot 是一个用于生成化学反应能量变化曲线的工具.
 由兰州大学 Yatao Lang 开发
 '''
 
-
-
 cdxml_header = '''<?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >
 <CDXML
