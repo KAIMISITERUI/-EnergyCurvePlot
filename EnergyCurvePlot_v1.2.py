@@ -15,45 +15,51 @@ import os
 import math
 from tkinter import simpledialog, filedialog
 import pandas as pd
-import tksheet
+
+
 
 '''
-1.3 开发计划
-1. 预期加入excel支持功能，而不是单纯的json存储
-2. 加入针对配置文件的保存功能
+1.3 版本更新日志
 
-1.2 Update log
+1. 增加保存配置和读取配置选项，这样可以将页面中设置好的参数直接保存，不用反复修改.
+2. 读取数据和保存数据的功能增加对xlsx和csv文件的支持.
+3. 保存cdxml文件现在可以选择保存位置.
+4. 增加了读取chemdraw文件风格的功能,现在可以选择读取自己常用风格的chemdraw文件,保存后也会是同样的风格。同时保存配置的时候也会被存储到配置信息里.
 
-1. Fixed the bug where circular patterns appeared below the line layer due to identical IDs.
-2. Fixed the bug where adjusting the page size affected the display (you can now freely modify the page size and aspect ratio).
-3. Optimized the page adjustment logic to make it more reasonable.
-4. Re-adjusted the bottom toolbar code; now all tools are functioning properly.
-5. When the base curve = 0, the drawn shape is now a true straight line.
-6 Added a right-click menu to the table area; right-clicking the table allows you to delete rows/columns, add rows on the left side, and add columns at the top.
-7. Added a "show grid" option, allowing you to set whether to display gridlines.
-8. Fixed the issue where exporting data from a table with empty rows caused an error.
-9. Added an "Open Table" button to open the table area.
-10. If multiple markers are at the same position, only one will be drawn.
+注意: 所有版本保存的 table_data.json 都是通用的, 可以被任何版本读取.
 
-Note: The table_data.json saved in all versions is universal and can be read by any version.
+1.2 版本更新日志
 
-1.1 Update log
+1. 修复了由于ID相同导致圆形图案出现在线条层下方的bug.
+2. 修复了调整页面大小影响显示的bug(现在可以自由修改页面大小和纵横比).
+3. 优化了页面调整逻辑, 使其更加合理.
+4. 重新调整了底部工具栏代码, 现在所有工具都能正常工作.
+5. 当基础曲线 = 0 时, 绘制的形状现在是真正的直线.
+6. 在表格区域添加了右键菜单, 右键单击表格可以删除行/列, 在左侧添加行, 在顶部添加列.
+7. 添加了"显示网格"选项, 允许设置是否显示网格线.
+8. 修复了从包含空行的表格导出数据时导致错误的问题.
+9. 添加了"打开表格"按钮以打开表格区域.
+10. 如果多个标记位于同一位置, 则只绘制一个.
 
-1. Auto-extend Page: The page now automatically extends, allowing for seamless content addition.
-2. Set Label Position: Users can now customize the position of labels.
-3. Single Marker Drawing: A feature has been added to draw a single marker on the plot for visual emphasis.
-4. Font Size Customization: Users can now adjust the font size for text elements on the plot.
-5. Font and Label Positioning: Added functionality to set the distance between the font and the label's central position.
-6. Line Thickness Customization: Users can now adjust the thickness of lines drawn on the plot.
-7. Bond Thickness Customization:  he thickness of bonds in the structure can now be customized.
+注意: 所有版本保存的 table_data.json 都是通用的, 可以被任何版本读取.
 
-1.0 veresion:
-EnergyCurvePlot is a tool designed to generate energy change curves for chemical reactions. 
-The program allows users to visualize the energy evolution throughout the reaction process, 
-providing insights into reaction mechanisms and energy profiles. The output is a cdxml file, 
-which can be easily opened and edited in Chemdraw for further customization. 
+1.1 版本更新日志
 
-Powered by Yatao Lang at Lanzhou university
+1. 自动扩展页面: 页面现在可以自动扩展, 允许无缝添加内容.
+2. 设置标签位置: 用户现在可以自定义标签的位置.
+3. 单个标记绘制: 添加了在图上绘制单个标记的功能以进行视觉强调.
+4. 字体大小自定义: 用户现在可以调整图上文本元素的字体大小.
+5. 字体和标签定位: 添加了设置字体与标签中心位置之间距离的功能.
+6. 线条粗细自定义: 用户现在可以调整图上绘制的线条粗细.
+7. 键粗细自定义: 结构中键的粗细现在可以自定义.
+
+1.0 版本:
+EnergyCurvePlot 是一个用于生成化学反应能量变化曲线的工具.
+该程序允许用户可视化整个反应过程中的能量演变,
+提供对反应机理和能量分布的洞察. 输出是一个 cdxml 文件,
+可以在 Chemdraw 中轻松打开和编辑以进行进一步自定义.
+
+由兰州大学 Yatao Lang 开发
 '''
 
 
@@ -143,27 +149,38 @@ shape_z_counter = 100
 text_z_counter = 300
 line_z_counter = 1
 global_id = 1
-# inorder to aviod the same z in generate circle 
+# 为了避免在生成圆形时使用相同的z值
 already_draw_target= []
-# Function to get Bezier curve points
 
-def get_bezier_curve_points_flat(x,y, adjustment_factor=0.05, width_factor=2,adjustment_factor_2=0.1):
+def get_bezier_curve_points_flat(x, y, adjustment_factor=0.05, width_factor=2, adjustment_factor_2=0.1):
+    """
+    功能:
+        生成平滑的贝塞尔曲线控制点, 用于绘制能量曲线
+    参数:
+        x: 列表, x坐标点
+        y: 列表, y坐标点(能量值)
+        adjustment_factor: 浮点, 基于距离变化的调整因子, 默认0.05
+        width_factor: 浮点, 曲线宽度因子, 默认2
+        adjustment_factor_2: 浮点, 基于能量变化的调整因子, 默认0.1
+    返回:
+        元组(x_adjusted, y, bezier_curves), 其中bezier_curves是包含控制点的字典列表
+    """
     if x == []:
         x_adjusted = ['no_data']
         y = ['no_data']
         bezier_curves = ['no_data']
-        return x_adjusted, y, bezier_curves 
-    # Calculate the energy change between adjacent energy points (absolute value)
+        return x_adjusted, y, bezier_curves
+    # 计算相邻能量点之间的能量变化(绝对值)
     delta_energy = np.abs(np.diff(y))
     delta_distance = np.abs(np.diff(x))
 
-    # Initialize x coordinates, starting from 0
+    # 初始化x坐标, 从0开始
     x_adjusted = x
 
-    # Adjust x coordinates based on energy changes
+    # 根据能量变化调整x坐标
     width_factor_adjusted = []
     for i in range(len(x)-1):
-        width_factor_adjusted.append(width_factor + delta_distance[i]*delta_distance[i]* adjustment_factor + delta_energy[i]* adjustment_factor_2)  
+        width_factor_adjusted.append(width_factor + delta_distance[i]*delta_distance[i]* adjustment_factor + delta_energy[i]* adjustment_factor_2)
 
     x_adjusted = np.array(x_adjusted)
     y = np.array(y)
@@ -171,18 +188,18 @@ def get_bezier_curve_points_flat(x,y, adjustment_factor=0.05, width_factor=2,adj
 
     bezier_curves = []
 
-    # Calculate Bezier control points for each interval
+    # 为每个区间计算贝塞尔控制点
     for i in range(len(x_adjusted) - 1):
         x0, x1 = x_adjusted[i], x_adjusted[i + 1]
         y0, y1 = y[i], y[i + 1]
 
-        # Control points for 6-point Bezier curve: start, end, and two control points for each
-        X0, Y0 = x0, y0  # Start point
-        X5, Y5 = x1, y1  # End point
-        X1, Y1 = x0 - width_factor_adjusted[i], y0  # Control point to the left of start point
-        X4, Y4 = x1 + width_factor_adjusted[i], y1  # Control point to the right of end point
-        X2, Y2 = x0 + width_factor_adjusted[i], y0  # Control point to the right of start point
-        X3, Y3 = x1 - width_factor_adjusted[i], y1  # Control point to the left of end point
+        # 6点贝塞尔曲线的控制点: 起点, 终点, 以及每个点的两个控制点
+        X0, Y0 = x0, y0  # 起点
+        X5, Y5 = x1, y1  # 终点
+        X1, Y1 = x0 - width_factor_adjusted[i], y0  # 起点左侧的控制点
+        X4, Y4 = x1 + width_factor_adjusted[i], y1  # 终点右侧的控制点
+        X2, Y2 = x0 + width_factor_adjusted[i], y0  # 起点右侧的控制点
+        X3, Y3 = x1 - width_factor_adjusted[i], y1  # 终点左侧的控制点
 
         bezier_curves.append({
             'X': [X1, X0, X2, X3, X5, X4],
@@ -191,7 +208,21 @@ def get_bezier_curve_points_flat(x,y, adjustment_factor=0.05, width_factor=2,adj
 
     return x_adjusted, y, bezier_curves 
 
-def draw_curve(bezier_curves,connect_type='center',bond_length=10,curves_color = '3',line_type = 'Solid',original_x=None,curve_width=0.6):
+def draw_curve(bezier_curves, connect_type='center', bond_length=10, curves_color='3', line_type='Solid', original_x=None, curve_width=0.6):
+    """
+    功能:
+        根据贝塞尔曲线控制点生成XML格式的曲线元素
+    参数:
+        bezier_curves: 列表, 包含贝塞尔曲线控制点的字典列表
+        connect_type: 字符串, 连接类型('center'或'side'), 默认'center'
+        bond_length: 浮点, 键长度, 默认10
+        curves_color: 字符串, 曲线颜色代码, 默认'3'
+        line_type: 字符串, 线条类型, 默认'Solid'
+        original_x: 列表, 原始x坐标, 当connect_type='side'时使用
+        curve_width: 浮点, 曲线宽度, 默认0.6
+    返回:
+        列表, 包含XML格式的曲线字符串
+    """
     curves_xml = []
     global global_id
     global line_z_counter
@@ -199,7 +230,7 @@ def draw_curve(bezier_curves,connect_type='center',bond_length=10,curves_color =
         for curve_id, curve in enumerate(bezier_curves, start=1):
             X = curve['X']
             Y = curve['Y']
-            scaled_points = [f"{X[i]:.2f} {Y[i]:.2f}" for i in range(len(X))]  # Flip Y coordinates
+            scaled_points = [f"{X[i]:.2f} {Y[i]:.2f}" for i in range(len(X))]  # 翻转Y坐标
             curve_points_str = " ".join(scaled_points)
             curves_xml.append(f'<curve id="{global_id}"\n Z="{line_z_counter}\n" color="{curves_color}"\n LineType="{line_type}"\n LineWidth="{curve_width}"\n CurvePoints="{curve_points_str}"\n />')
             global_id += 1
@@ -217,32 +248,47 @@ def draw_curve(bezier_curves,connect_type='center',bond_length=10,curves_color =
             X[4] = X[4] + bond_length*(2*original_x[curve_id]+1)
             X[5] = X[5] + bond_length*(2*original_x[curve_id]+1)
 
-            scaled_points = [f"{X[i] :.2f} {Y[i]:.2f}" for i in range(len(X))]  # Flip Y coordinates
+            scaled_points = [f"{X[i] :.2f} {Y[i]:.2f}" for i in range(len(X))]  # 翻转Y坐标
             curve_points_str = " ".join(scaled_points)
             curves_xml.append(f'<curve id="{global_id}"\n Z="{line_z_counter}"\n color="{curves_color}"\n LineType="{line_type}"\n LineWidth="{curve_width}"\n CurvePoints="{curve_points_str}"\n />')
             global_id += 1
             line_z_counter += 1
     return curves_xml
 
-def draw_line(center_x,center_y,linetype,linewidth,bond_length=10,bond_color = 4,connect_type = 'side',original_x=None):
+def draw_line(center_x, center_y, linetype, linewidth, bond_length=10, bond_color=4, connect_type='side', original_x=None):
+    """
+    功能:
+        生成连接能量点的直线XML元素
+    参数:
+        center_x: 列表, 中心点x坐标
+        center_y: 列表, 中心点y坐标
+        linetype: 字符串, 线条类型
+        linewidth: 浮点, 线条宽度
+        bond_length: 浮点, 键长度, 默认10
+        bond_color: 整数, 线条颜色代码, 默认4
+        connect_type: 字符串, 连接类型('center'或'side'), 默认'side'
+        original_x: 列表, 原始x坐标, 当connect_type='side'时使用
+    返回:
+        列表, 包含XML格式的线条字符串
+    """
     line_xml = []
     global global_id
     global line_z_counter
 
 
     if connect_type == 'center':
-        # Transform center coordinates
+        # 转换中心坐标
         scale_center_x = center_x
         scale_center_y = center_y
     elif connect_type == 'side':
-        # Transform center coordinates
+        # 转换中心坐标
         scale_center_x = [x + bond_length*2*(original_x[idx]+1) for idx, x in enumerate(center_x)]
         scale_center_y = center_y
 
     for i in range(len(scale_center_x)-1):
-        # Calculate bounding box coordinates
+        # 计算边界框坐标
         if connect_type == 'center':
-            x1 = scale_center_x[i] 
+            x1 = scale_center_x[i]
             x2 = scale_center_x[i+1]
             y1 = scale_center_y[i]
             y2 = scale_center_y[i+1]
@@ -257,14 +303,14 @@ def draw_line(center_x,center_y,linetype,linewidth,bond_length=10,bond_color = 4
         line = ET.Element('arrow', id=str(global_id), Z=str(line_z_counter), LineType=f'{linetype} Bold')
         global_id += 1
         line_z_counter += 1
-        # Set BoundingBox attribute
+        # 设置BoundingBox属性
         line.set("BoundingBox", bounding_box)
 
-        # Set color attribute (if provided)
+        # 设置颜色属性(如果提供)
         if bond_color:
             line.set("color", str(bond_color))
 
-                # Set 3D coordinates
+        # 设置3D坐标
         head3d = f"{x2:.2f} {scale_center_y[i+1] :.2f} 0"
         tail3d = f"{x1:.2f} {scale_center_y[i] :.2f} 0"
         center3d = f"{scale_center_x[i] :.2f} {scale_center_y[i]:.2f} 0"
@@ -278,12 +324,26 @@ def draw_line(center_x,center_y,linetype,linewidth,bond_length=10,bond_color = 4
         line.set("MajorAxisEnd3D", major_axis_end3d)
         line.set("MinorAxisEnd3D", minor_axis_end3d)
 
-        # Convert to string and append to list
+        # 转换为字符串并添加到列表
         line_xml.append(ET.tostring(line, encoding='unicode', method='xml'))
-    
+
     return line_xml
 
-def generate_rectangle_xml(center_x,center_y,bond_length=10,bond_color = 4,connect_type = 'side',original_x=None,bond_width = 2.0):
+def generate_rectangle_xml(center_x, center_y, bond_length=10, bond_color=4, connect_type='side', original_x=None, bond_width=2.0):
+    """
+    功能:
+        生成表示能量点的矩形(短线)XML元素
+    参数:
+        center_x: 列表, 中心点x坐标
+        center_y: 列表, 中心点y坐标
+        bond_length: 浮点, 键长度, 默认10
+        bond_color: 整数, 颜色代码, 默认4
+        connect_type: 字符串, 连接类型('center'或'side'), 默认'side'
+        original_x: 列表, 原始x坐标, 当connect_type='side'时使用
+        bond_width: 浮点, 键宽度, 默认2.0
+    返回:
+        列表, 包含XML格式的矩形字符串
+    """
     rectangles_xml = []
     global global_id
     global shape_z_counter
@@ -292,16 +352,16 @@ def generate_rectangle_xml(center_x,center_y,bond_length=10,bond_color = 4,conne
     global already_draw_target
 
     if connect_type == 'center':
-        # Transform center coordinates
+        # 转换中心坐标
         scale_center_x = center_x
         scale_center_y = center_y
     elif connect_type == 'side':
-        # Transform center coordinates
+        # 转换中心坐标
         scale_center_x = [x + bond_length*2*(original_x[idx]+1) for idx, x in enumerate(center_x)]
         scale_center_y = center_y
 
-    # auto change page width and high
-    for x in  scale_center_x:
+    # 自动调整页面宽度和高度
+    for x in scale_center_x:
         ad_page_width = math.ceil(abs(x/510))
         if ad_page_width > page_width:
             page_width = ad_page_width
@@ -317,24 +377,24 @@ def generate_rectangle_xml(center_x,center_y,bond_length=10,bond_color = 4,conne
             already_draw_target.append(coordinate)
         else:
             continue
-        # Calculate bounding box coordinates
-        x1 = (scale_center_x[i] - bond_length) 
+        # 计算边界框坐标
+        x1 = (scale_center_x[i] - bond_length)
         x2 = (scale_center_x[i] + bond_length)
         y1 = scale_center_y[i]
         y2 = scale_center_y[i]
         bounding_box = f"{x1:.2f} {y1:.2f} {x2:.2f} {y2:.2f}"
-        
+
         arrow = ET.Element('arrow', id=str(global_id), Z=str(shape_z_counter), LineType="Bold", FillType="None", ArrowheadType="Solid")
         global_id += 1
         shape_z_counter += 1
-        # Set BoundingBox attribute
+        # 设置BoundingBox属性
         arrow.set("BoundingBox", bounding_box)
 
-        # Set color attribute (if provided)
+        # 设置颜色属性(如果提供)
         if bond_color:
             arrow.set("color", str(bond_color))
 
-        # Set 3D coordinates
+        # 设置3D坐标
         head3d = f"{x2:.2f} {scale_center_y[i] :.2f} 0"
         tail3d = f"{x1:.2f} {scale_center_y[i] :.2f} 0"
         center3d = f"{scale_center_x[i] :.2f} {scale_center_y[i]:.2f} 0"
@@ -347,33 +407,46 @@ def generate_rectangle_xml(center_x,center_y,bond_length=10,bond_color = 4,conne
         arrow.set("Center3D", center3d)
         arrow.set("MajorAxisEnd3D", major_axis_end3d)
         arrow.set("MinorAxisEnd3D", minor_axis_end3d)
-        
-        # Convert to string and append to list
+
+        # 转换为字符串并添加到列表
         rectangles_xml.append(ET.tostring(arrow, encoding='unicode', method='xml'))
-    
+
     return rectangles_xml
 
-def generate_circle_xml(center_x, center_y, radius=5, circle_color=8, connect_type='side',original_x=None):
+def generate_circle_xml(center_x, center_y, radius=5, circle_color=8, connect_type='side', original_x=None):
+    """
+    功能:
+        生成表示能量点的圆形标记XML元素
+    参数:
+        center_x: 列表, 中心点x坐标
+        center_y: 列表, 中心点y坐标
+        radius: 浮点, 圆形半径, 默认5
+        circle_color: 整数, 圆形颜色代码, 默认8
+        connect_type: 字符串, 连接类型('center'或'side'), 默认'side'
+        original_x: 列表, 原始x坐标, 当connect_type='side'时使用
+    返回:
+        列表, 包含XML格式的圆形字符串
+    """
     import xml.etree.ElementTree as ET
     global shape_z_counter
     global global_id
     global page_width
     global page_high
     global already_draw_target
-    
+
     circles_xml = []
 
     if connect_type == 'center':
-        # Transform center coordinates
+        # 转换中心坐标
         scale_center_x = center_x
         scale_center_y = center_y
     elif connect_type == 'side':
-        # Transform center coordinates
+        # 转换中心坐标
         scale_center_x = [x + radius *2*(original_x[idx]+1) for idx, x in enumerate(center_x)]
         scale_center_y = center_y
 
-    # auto change page width and high
-    for x in  scale_center_x:
+    # 自动调整页面宽度和高度
+    for x in scale_center_x:
         ad_page_width = math.ceil(abs(x/500))
         if ad_page_width > page_width:
             page_width = ad_page_width
@@ -388,22 +461,22 @@ def generate_circle_xml(center_x, center_y, radius=5, circle_color=8, connect_ty
             already_draw_target.append(coordinate)
         else:
             continue
-        # Calculate bounding box coordinates
+        # 计算边界框坐标
         x1 = (scale_center_x[i] - radius)
         x2 = (scale_center_x[i] + radius)
         y1 = (scale_center_y[i] - radius)
         y2 = (scale_center_y[i] + radius)
         bounding_box = f"{x1:.2f} {y1:.2f} {x2:.2f} {y2:.2f}"
 
-        # Create the root element
-        circle_id = 20 + i  # Example id, can be parameterized
+        # 创建根元素
+        circle_id = 20 + i  # 示例id, 可以参数化
         graphic = ET.Element('graphic', id=str(global_id), Z=str(shape_z_counter), color=str(circle_color), GraphicType="Oval", OvalType="Circle Filled")
         shape_z_counter += 1
         global_id += 1
-        # Set BoundingBox attribute
+        # 设置BoundingBox属性
         graphic.set("BoundingBox", bounding_box)
 
-        # Set 3D coordinates
+        # 设置3D坐标
         center3d = f"{scale_center_x[i]:.2f} {scale_center_y[i]:.2f} 0"
         major_axis_end3d = f"{x2:.2f} {scale_center_y[i]:.2f} 0"
         minor_axis_end3d = f"{scale_center_x[i]:.2f} {y2:.2f} 0"
@@ -412,40 +485,41 @@ def generate_circle_xml(center_x, center_y, radius=5, circle_color=8, connect_ty
         graphic.set("MajorAxisEnd3D", major_axis_end3d)
         graphic.set("MinorAxisEnd3D", minor_axis_end3d)
 
-        # Convert to string and append to list
+        # 转换为字符串并添加到列表
         circles_xml.append(ET.tostring(graphic, encoding='unicode', method='xml'))
 
     return circles_xml
 
-def generate_text_cdxml(center_x, center_y, energy_text_list, target_text_list,location,target_layout,target_location,text_space,text_base_movement,target_move,target_move_y, text_color=4, connect_type='side', original_x=None, font_size=10, font_type=3, Z_value=70):
+def generate_text_cdxml(center_x, center_y, energy_text_list, target_text_list, location, target_layout, target_location, text_space, text_base_movement, target_move, target_move_y, text_color=4, connect_type='side', original_x=None, font_size=10, font_type=3, Z_value=70, show_numbers=True, show_targets=True):
+    """
+    功能:
+        生成包含能量值和目标文本的CDXML文本元素
+    参数:
+        center_x: 列表, 每个文本元素的x坐标
+        center_y: 列表, 每个文本元素的y坐标
+        energy_text_list: 列表, 能量文本列表
+        target_text_list: 列表, 目标文本列表
+        location: 列表, 文本位置. sc sw sa ss sd cc cw cs ca cd
+        target_layout: 字符串, 目标位置的全局设置, 组合位置
+        target_location: 字符串, 目标位置的全局设置. c w s a d
+        text_space: 浮点, 文本到标记的间距
+        text_base_movement: 浮点, 将文本移动到标记中心
+        target_move: 浮点, 由目标大小引起的移动(bond_length/radius)
+        target_move_y: 浮点, y方向的目标移动
+        text_color: 整数, 文本颜色代码, 默认4
+        connect_type: 字符串, 连接类型('center'或'side'), 默认'side'
+        original_x: 列表, 原始x值, 当connect_type='side'时使用
+        font_size: 整数, 字体大小, 默认10
+        font_type: 整数, 字体类型, 默认3
+        Z_value: 整数, <t>标签的Z值, 默认70
+        show_numbers: 布尔, 是否显示能量数字, 默认True
+        show_targets: 布尔, 是否显示目标文本, 默认True
+    返回:
+        列表, 字符串格式的cdxml文本元素列表
+    """
 
-    """
-    Generates a list of cdxml text elements with a given set of coordinates and text.
-    
-    Args:
-        center_x (list): List of x coordinates for each text element.
-        center_y (list): List of y coordinates for each text element.
-        energy_text_list (list): List of energy text
-        target_text_list (list): List of target_text
-        locaton (list): List of text Location. sc sw sa ss sd cc cw cs ca cd 
-        target_layout (str): global site of taget location.combine location
-        target_location (str): global site of taget location. c w s a d
-        text_space (float): text_spcae to marker
-        text_base_movement (float): move test to mark center
-        target_move (float): move caused by tagert size (bond_length/radius)
-        text_color (int, optional): Color code for the text (default is 4).
-        font_size (int, optional): Font size for the text (default is 10).
-        font_type (int, optional): Font type for the text (default is 3).
-        Z_value (int, optional): Z-value for the <t> tag (default is 70).
-        connect_type (str, optional): Connection type, either 'center' or 'side' (default is 'side').
-        original_x (list, optional): List of original x values, used when connect_type is 'side'.
-        
-    Returns:
-        list: List of cdxml text elements in string format.
-    """
-    
     cdxml_elements = []
-    def add_text_xml(p_x,p_y, text, text_color, font_size, font_type, Z_value, cdxml_elements, i):
+    def add_text_xml(p_x, p_y, text, text_color, font_size, font_type, Z_value, cdxml_elements, i):
         global global_id
         global text_z_counter
         if text != '':
@@ -454,24 +528,24 @@ def generate_text_cdxml(center_x, center_y, energy_text_list, target_text_list,l
                 # if len(text) == 1 and text.isalpha() and text.isupper():
                 #     p_x -= 3
 
-            # Create the <t> element with the corresponding attributes
+            # 创建<t>元素及其对应的属性
             t_element = ET.Element('t', id=str(global_id), p=f"{p_x:.2f} {p_y:.2f}", Z=str(text_z_counter),CaptionJustification="Center",Justification="Center",LineHeight="auto",InterpretChemically="no")
             global_id += 1
             text_z_counter += 1
-            # Create the <s> element for text styling
+            # 创建<s>元素用于文本样式
             s_element = ET.SubElement(t_element, 's', font=str(font_type), size=str(font_size), color=str(text_color))
             s_element.text = text
-                
-                # Convert the element to string and append to the list
+
+            # 将元素转换为字符串并添加到列表
             cdxml_elements.append(ET.tostring(t_element, encoding='unicode', method='xml'))
-        
-    # Adjust coordinates based on connect_type
+
+    # 根据connect_type调整坐标
     if connect_type == 'center':
-        # No transformation, use provided coordinates directly
+        # 不进行转换, 直接使用提供的坐标
         scale_center_x = center_x
         scale_center_y = [y + text_base_movement  for y in center_y]
     elif connect_type == 'side' and original_x is not None:
-        # Adjust x-coordinates based on original_x and radius (as in your previous example)
+        # 根据original_x和radius调整x坐标
         scale_center_x = [x +  target_move * 2 *(original_x[idx]+1) for idx, x in enumerate(center_x)]
         scale_center_y = [y + text_base_movement  for y in center_y]
     else:
@@ -487,132 +561,200 @@ def generate_text_cdxml(center_x, center_y, energy_text_list, target_text_list,l
         else:
             continue
         if location[idx].lower() == 'sc':
-            add_text_xml(scale_center_x[idx],scale_center_y[idx]-text_space-target_move_y, energy_text_list[idx], text_color, font_size, font_type, Z_value, cdxml_elements, i)
-            if target_text_list[idx]:
+            if show_numbers:
+                add_text_xml(scale_center_x[idx],scale_center_y[idx]-text_space-target_move_y, energy_text_list[idx], text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            if target_text_list[idx] and show_targets:
                 add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
         elif location[idx].lower() == 'cw':
-            if target_text_list[idx]:
-                combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
-            else:
-                combine_text = str(energy_text_list[idx])
-            add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-target_move_y,combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            if show_numbers:
+                if target_text_list[idx] and show_targets:
+                    combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
+                else:
+                    combine_text = str(energy_text_list[idx])
+                add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-target_move_y,combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            elif target_text_list[idx] and show_targets:
+                add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-target_move_y,target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
         elif location[idx].lower() == 'cs':
-            if target_text_list[idx]:
-                combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
-            else:
-                combine_text = str(energy_text_list[idx])
-            add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            if show_numbers:
+                if target_text_list[idx] and show_targets:
+                    combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
+                else:
+                    combine_text = str(energy_text_list[idx])
+                add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            elif target_text_list[idx] and show_targets:
+                add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
         elif location[idx].lower() == 'ca':
-            if target_text_list[idx]:
-                combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
-            else:
-                combine_text = str(energy_text_list[idx])
-            add_text_xml(scale_center_x[idx]-text_space-target_move-len(combine_text)/2*font_size*0.5, scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            if show_numbers:
+                if target_text_list[idx] and show_targets:
+                    combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
+                else:
+                    combine_text = str(energy_text_list[idx])
+                add_text_xml(scale_center_x[idx]-text_space-target_move-len(combine_text)/2*font_size*0.5, scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            elif target_text_list[idx] and show_targets:
+                add_text_xml(scale_center_x[idx]-text_space-target_move-len(target_text_list[idx])/2*font_size*0.5, scale_center_y[idx],target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
         elif location[idx].lower() == 'cd':
-            if target_text_list[idx]:
-                combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
-            else:
-                combine_text = str(energy_text_list[idx])
-            add_text_xml(scale_center_x[idx]+text_space+target_move+len(combine_text)/2*font_size*0.5, scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            if show_numbers:
+                if target_text_list[idx] and show_targets:
+                    combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
+                else:
+                    combine_text = str(energy_text_list[idx])
+                add_text_xml(scale_center_x[idx]+text_space+target_move+len(combine_text)/2*font_size*0.5, scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            elif target_text_list[idx] and show_targets:
+                add_text_xml(scale_center_x[idx]+text_space+target_move+len(target_text_list[idx])/2*font_size*0.5, scale_center_y[idx],target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
         elif location[idx].lower() == 'cc':
-            if target_text_list[idx]:
-                combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
-            else:
-                combine_text = str(energy_text_list[idx]) 
-            add_text_xml(scale_center_x[idx], scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            if show_numbers:
+                if target_text_list[idx] and show_targets:
+                    combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
+                else:
+                    combine_text = str(energy_text_list[idx])
+                add_text_xml(scale_center_x[idx], scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            elif target_text_list[idx] and show_targets:
+                add_text_xml(scale_center_x[idx], scale_center_y[idx],target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
 
         elif location[idx].lower() == 'sw':
-            add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-target_move_y,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
-            if target_text_list[idx]:
+            if show_numbers:
+                add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-target_move_y,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            if target_text_list[idx] and show_targets:
                 add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-font_size-target_move_y,str(target_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
         elif location[idx].lower() == 'ss':
-            add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
-            if target_text_list[idx]:
+            if show_numbers:
+                add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            if target_text_list[idx] and show_targets:
                 add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+font_size+target_move_y,str(target_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
         elif location[idx].lower() == 'sa':
-            if target_text_list[idx]:
-                add_text_xml(scale_center_x[idx]-text_space-target_move-len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]-font_size/2,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            if target_text_list[idx] and show_targets:
+                if show_numbers:
+                    add_text_xml(scale_center_x[idx]-text_space-target_move-len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]-font_size/2,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
                 add_text_xml(scale_center_x[idx]-text_space-target_move-len(str(target_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]+font_size/2,str(target_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
             else:
-                add_text_xml(scale_center_x[idx]-text_space-target_move-len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx],str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                if show_numbers:
+                    add_text_xml(scale_center_x[idx]-text_space-target_move-len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx],str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
         elif location[idx].lower() == 'sd':
-            if target_text_list[idx]:
-                add_text_xml(scale_center_x[idx]+text_space+target_move+len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]-font_size/2,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+            if target_text_list[idx] and show_targets:
+                if show_numbers:
+                    add_text_xml(scale_center_x[idx]+text_space+target_move+len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]-font_size/2,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
                 add_text_xml(scale_center_x[idx]+text_space+target_move+len(str(target_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]+font_size/2,str(target_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
             else:
-                add_text_xml(scale_center_x[idx]+text_space+target_move+len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx],str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                if show_numbers:
+                    add_text_xml(scale_center_x[idx]+text_space+target_move+len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx],str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
         else:
             if target_layout == 'sperate':
                 if target_location == 'c': #sc
-                    add_text_xml(scale_center_x[idx],scale_center_y[idx]-text_space-target_move_y, energy_text_list[idx], text_color, font_size, font_type, Z_value, cdxml_elements, i)
-                    if target_text_list[idx]:
+                    if show_numbers:
+                        add_text_xml(scale_center_x[idx],scale_center_y[idx]-text_space-target_move_y, energy_text_list[idx], text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    if target_text_list[idx] and show_targets:
                         add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
 
                 elif target_location == 'w': #sw
-                    add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-target_move_y,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
-                    if target_text_list[idx]:
+                    if show_numbers:
+                        add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-target_move_y,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    if target_text_list[idx] and show_targets:
                         add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-font_size-target_move_y,str(target_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
 
                 elif target_location == 's': #ss
-                    add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
-                    if target_text_list[idx]:
-                        add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+font_size+target_move_y,str(target_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)   
+                    if show_numbers:
+                        add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    if target_text_list[idx] and show_targets:
+                        add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+font_size+target_move_y,str(target_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
 
                 elif target_location == 'a': #sa
-                    if target_text_list[idx]:
-                        add_text_xml(scale_center_x[idx]-text_space-target_move-len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]-font_size/2,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    if target_text_list[idx] and show_targets:
+                        if show_numbers:
+                            add_text_xml(scale_center_x[idx]-text_space-target_move-len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]-font_size/2,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
                         add_text_xml(scale_center_x[idx]-text_space-target_move-len(str(target_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]+font_size/2,str(target_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
                     else:
-                        add_text_xml(scale_center_x[idx]-text_space-target_move-len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx],str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                        if show_numbers:
+                            add_text_xml(scale_center_x[idx]-text_space-target_move-len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx],str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
                 elif target_location == 'd': #sd
-                    if target_text_list[idx]:
-                        add_text_xml(scale_center_x[idx]+text_space+target_move+len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]-font_size/2,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    if target_text_list[idx] and show_targets:
+                        if show_numbers:
+                            add_text_xml(scale_center_x[idx]+text_space+target_move+len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]-font_size/2,str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
                         add_text_xml(scale_center_x[idx]+text_space+target_move+len(str(target_text_list[idx]))/2*font_size*0.5, scale_center_y[idx]+font_size/2,str(target_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
                     else:
-                        add_text_xml(scale_center_x[idx]+text_space+target_move+len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx],str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                        if show_numbers:
+                            add_text_xml(scale_center_x[idx]+text_space+target_move+len(str(energy_text_list[idx]))/2*font_size*0.5, scale_center_y[idx],str(energy_text_list[idx]),text_color, font_size, font_type, Z_value, cdxml_elements, i)
 
             elif target_layout == 'combine':
                 if target_location == 'c': #cc
-                    if target_text_list[idx]:
-                        combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
-                    else:
-                        combine_text = str(energy_text_list[idx]) 
-                    add_text_xml(scale_center_x[idx], scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    if show_numbers:
+                        if target_text_list[idx] and show_targets:
+                            combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
+                        else:
+                            combine_text = str(energy_text_list[idx])
+                        add_text_xml(scale_center_x[idx], scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    elif target_text_list[idx] and show_targets:
+                        add_text_xml(scale_center_x[idx], scale_center_y[idx],target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
 
                 elif  target_location == 'w': #cw
-                    if target_text_list[idx]:
-                        combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
-                    else:
-                        combine_text = str(energy_text_list[idx])
-                    add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-target_move_y,combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    if show_numbers:
+                        if target_text_list[idx] and show_targets:
+                            combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
+                        else:
+                            combine_text = str(energy_text_list[idx])
+                        add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-target_move_y,combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    elif target_text_list[idx] and show_targets:
+                        add_text_xml(scale_center_x[idx], scale_center_y[idx]-text_space-target_move_y,target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
 
-                elif  target_location == 's': #cs 
-                    if target_text_list[idx]:
-                        combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
-                    else:
-                        combine_text = str(energy_text_list[idx])
-                    add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                elif  target_location == 's': #cs
+                    if show_numbers:
+                        if target_text_list[idx] and show_targets:
+                            combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
+                        else:
+                            combine_text = str(energy_text_list[idx])
+                        add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    elif target_text_list[idx] and show_targets:
+                        add_text_xml(scale_center_x[idx], scale_center_y[idx]+text_space+target_move_y,target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
 
                 elif  target_location == 'a': #ca
-                    if target_text_list[idx]:
-                        combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
-                    else:
-                        combine_text = str(energy_text_list[idx])
-                    add_text_xml(scale_center_x[idx]-text_space-target_move-len(combine_text)/2*font_size*0.5, scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    if show_numbers:
+                        if target_text_list[idx] and show_targets:
+                            combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
+                        else:
+                            combine_text = str(energy_text_list[idx])
+                        add_text_xml(scale_center_x[idx]-text_space-target_move-len(combine_text)/2*font_size*0.5, scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    elif target_text_list[idx] and show_targets:
+                        add_text_xml(scale_center_x[idx]-text_space-target_move-len(target_text_list[idx])/2*font_size*0.5, scale_center_y[idx],target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
 
-                elif  target_location == 'd': #cd     
-                    if target_text_list[idx]:
-                        combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
-                    else:
-                        combine_text = str(energy_text_list[idx])
-                    add_text_xml(scale_center_x[idx]+text_space+target_move+len(combine_text)/2*font_size*0.5, scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                elif  target_location == 'd': #cd
+                    if show_numbers:
+                        if target_text_list[idx] and show_targets:
+                            combine_text = f'{energy_text_list[idx]} {target_text_list[idx]}'
+                        else:
+                            combine_text = str(energy_text_list[idx])
+                        add_text_xml(scale_center_x[idx]+text_space+target_move+len(combine_text)/2*font_size*0.5, scale_center_y[idx],combine_text,text_color, font_size, font_type, Z_value, cdxml_elements, i)
+                    elif target_text_list[idx] and show_targets:
+                        add_text_xml(scale_center_x[idx]+text_space+target_move+len(target_text_list[idx])/2*font_size*0.5, scale_center_y[idx],target_text_list[idx],text_color, font_size, font_type, Z_value, cdxml_elements, i)
                         
     return cdxml_elements
 
-# Function to save CDXML to file
 def save_cdxml_file(cdxml_string, filename="output.cdxml"):
-    with open(filename, 'w', encoding='utf-8') as file:
+    """
+    功能:
+        将CDXML字符串保存到文件, 弹出文件保存对话框让用户选择保存位置
+    参数:
+        cdxml_string: 字符串, CDXML格式的内容
+        filename: 字符串, 默认文件名, 默认"output.cdxml"
+    返回:
+        无
+    """
+    # 弹出文件保存对话框
+    file_path = filedialog.asksaveasfilename(
+        defaultextension=".cdxml",
+        filetypes=[("CDXML文件", "*.cdxml"), ("所有文件", "*.*")],
+        initialfile=filename,
+        title="保存CDXML文件"
+    )
+
+    # 如果用户取消了保存操作, 则返回
+    if not file_path:
+        print("保存操作已取消")
+        return
+
+    # 保存文件
+    with open(file_path, 'w', encoding='utf-8') as file:
         file.write(cdxml_string)
+
+    print(f"CDXML文件已成功保存到: {file_path}")
 
 def adjust_line_width_based_on_chart_ratio(ax, scaled_x_adjusted, scaled_y_points):
     """
@@ -658,15 +800,36 @@ combine_texxts = []
 size_markers = []
 
 def interactive_bezier_curve():
+    """
+    功能:
+        创建交互式贝塞尔曲线绘图界面, 用于能量曲线的可视化和编辑
+    参数:
+        无
+    返回:
+        无
+    """
+    # 用于存储从CDXML文件读取的风格信息
+    loaded_cdxml_header = None
+    loaded_font_xml = None
+    loaded_font_id = None  # 存储读取的字体ID
+    loaded_font_name = None  # 存储读取的字体名称
 
     def parse_data(data):
+        """
+        功能:
+            解析表格中的数据字符串, 提取能量值、目标文本和位置信息
+        参数:
+            data: 字符串, 格式为"能量值(目标文本), 位置"
+        返回:
+            列表[y_value, target, location], 包含解析后的能量值、目标文本和位置
+        """
         # 去除两端的空白字符
         data = data.strip()
 
         # 初始化默认值
         y_value = None
         target = ""
-        location = "bs"  # 默认 location 值为 "bs"
+        location = "bs"  # 默认location值为"bs"
 
         # 替换中文括号和中文逗号为英文括号和逗号
         data = data.replace('（', '(').replace('）', ')').replace('，', ',')
@@ -675,75 +838,85 @@ def interactive_bezier_curve():
         if ',' in data:
             y_split = data.split(',')
             y_and_target = y_split[0]
-            if  y_split[1].strip():
+            if y_split[1].strip():
                 location = y_split[1].strip()
         else:
-            y_and_target = data 
+            y_and_target = data
 
 
         if '(' in y_and_target:
-            y_value =  y_and_target.split('(')[0]
+            y_value = y_and_target.split('(')[0]
             target = y_and_target.split('(')[1].split(')')[0].strip()
 
         else:
             y_value = y_and_target
 
-    
-        return [y_value, target, location]
-    
-    def draw_benzene(ax, center_x, center_y, line_width,hexagon_side, bond_gap, bond_length_ratio, ):
-        """
-        Draw a benzene-like hexagon with shorter alternating double bonds on a matplotlib Axes.
 
-        Args:
-            ax (matplotlib.axes.Axes): The Axes to draw on.
-            center_x (float): X-coordinate of the benzene center.
-            center_y (float): Y-coordinate of the benzene center.
-            hexagon_side (float): Length of each side of the hexagon.
-            bond_gap (float): Gap between the lines of the double bond.
-            bond_length_ratio (float): Proportion of the bond length relative to the full side.
-            line_width (float): Width of the hexagon and double bonds.
-            size_markers (list): List to store each plotted line as an element.
+        return [y_value, target, location]
+
+    def draw_benzene(ax, center_x, center_y, line_width, hexagon_side, bond_gap, bond_length_ratio):
         """
-        # Calculate the coordinates for the hexagon vertices
-        angles = np.linspace(0, 2 * np.pi, 7)  # 6 vertices + closing point
+        功能:
+            在matplotlib轴上绘制类似苯环的六边形, 带有较短的交替双键
+        参数:
+            ax: matplotlib.axes.Axes对象, 要绘制的轴
+            center_x: 浮点, 苯环中心的x坐标
+            center_y: 浮点, 苯环中心的y坐标
+            line_width: 浮点, 六边形和双键的宽度
+            hexagon_side: 浮点, 六边形每条边的长度
+            bond_gap: 浮点, 双键线条之间的间隙
+            bond_length_ratio: 浮点, 键长度相对于完整边长的比例
+        返回:
+            无
+        """
+        # 计算六边形顶点的坐标
+        angles = np.linspace(0, 2 * np.pi, 7)  # 6个顶点 + 闭合点
         x = center_x + hexagon_side * np.cos(angles)
         y = center_y + hexagon_side * np.sin(angles)
 
-        # Plot the hexagon
-        hexagon_line, = ax.plot(x, y, 'k-', linewidth=line_width)  # Extract the Line2D object
+        # 绘制六边形
+        hexagon_line, = ax.plot(x, y, 'k-', linewidth=line_width)  # 提取Line2D对象
         size_markers.append(hexagon_line)
 
-        # Double bond indices
-        bond_indices = [(0, 1), (2, 3), (4, 5)]  # Pairs of vertices for double bonds
+        # 双键索引
+        bond_indices = [(0, 1), (2, 3), (4, 5)]  # 双键的顶点对
         for i, j in bond_indices:
-            # Calculate the direction vector of the bond
+            # 计算键的方向向量
             dx = x[j] - x[i]
             dy = y[j] - y[i]
             length = np.sqrt(dx**2 + dy**2)
             dx /= length
             dy /= length
 
-            # Calculate the shorter bond start and end points
+            # 计算较短键的起点和终点
             x_start = x[i] + (1 - bond_length_ratio) / 2 * length * dx
             y_start = y[i] + (1 - bond_length_ratio) / 2 * length * dy
             x_end = x[j] - (1 - bond_length_ratio) / 2 * length * dx
             y_end = y[j] - (1 - bond_length_ratio) / 2 * length * dy
 
-            # Perpendicular offset for the second line
-            perp_dx = dy  # Rotate 90 degrees
+            # 第二条线的垂直偏移
+            perp_dx = dy  # 旋转90度
             perp_dy = -dx
 
-            # Plot the shorter double bond as two close lines
-            double_bond_line, = ax.plot([x_start - bond_gap * perp_dx, x_end - bond_gap * perp_dx], 
-                                        [y_start - bond_gap * perp_dy, y_end - bond_gap * perp_dy], 
+            # 绘制较短的双键作为两条靠近的线
+            double_bond_line, = ax.plot([x_start - bond_gap * perp_dx, x_end - bond_gap * perp_dx],
+                                        [y_start - bond_gap * perp_dy, y_end - bond_gap * perp_dy],
                                         'k-', linewidth=line_width)
             size_markers.append(double_bond_line)
 
     def update_plot(*args):
+        """
+        功能:
+            更新绘图, 根据用户输入的参数重新绘制能量曲线
+        参数:
+            *args: 可变参数, 用于接收事件参数
+        返回:
+            无
+        """
+        nonlocal loaded_font_name
 
         try:
-            # Get user input parameters
+            # 获取用户输入参数
             adjustment_factor = float(adjustment_factor_var.get())
             width_factor = float(width_factor_var.get())
             adjustment_factor_2 = float(adjustment_factor_2_var.get())
@@ -764,8 +937,21 @@ def interactive_bezier_curve():
             bond_width = bond_width_var.get()
             grid = grid_var.get()
 
+            # 确定使用的字体名称, 并验证字体是否可用
+            if loaded_font_name is not None:
+                import matplotlib.font_manager as fm
+                available_fonts = [f.name for f in fm.fontManager.ttflist]
+                if loaded_font_name in available_fonts:
+                    current_font_name = loaded_font_name
+                    print(f"使用字体: {current_font_name}")
+                else:
+                    current_font_name = 'Arial'
+                    print(f"警告: 字体 '{loaded_font_name}' 在系统中未找到, 使用默认字体 Arial")
+            else:
+                current_font_name = 'Arial'
+
             if table is None or not table.winfo_exists():
-                print('No table window detected, please click "Open Table"')
+                print('Table window not detected, please click "Open Table"')
                 return
 
             global already_draw_target
@@ -783,7 +969,7 @@ def interactive_bezier_curve():
             else:
                 contain_ax = False
             
-            # Clear previous plot
+            # 清除之前的绘图
             ax.clear()
             ax.tick_params(axis='both', which='both', bottom=False, top=False,
                 left=False, right=False, labelbottom=False, labelleft=False)
@@ -793,17 +979,17 @@ def interactive_bezier_curve():
             if grid:
                 ax.grid(True)
 
-            # Invert Y-axis
+            # 反转Y轴
             ax.invert_yaxis()
 
-            # Set equal aspect ratio to maintain shape consistency
+            # 设置相等的纵横比以保持形状一致性
             ax.set_aspect("equal", adjustable="datalim")
 
             # line_width = adjust_line_width_based_on_chart_ratio(ax, x_total, y_total)
             line_width = 10
             key_width =  line_width*3.38
 
-            # Get data from the table and create y lists for each row
+            # 从表格获取数据并为每一行创建y列表
             for row in table.get_children():
                 values = table.item(row)['values']
                 original_y = []
@@ -820,22 +1006,22 @@ def interactive_bezier_curve():
                             location.append(value[2])
                             original_x.append(index + 1)
                         except ValueError:
-                            print(f"Invalid value at row {row}, column {index + 2}. Please correct it.")
+                            print(f"Invalid value at row {row}, column {index + 2}. Please correct.")
                             return
 
                 curve_color = values[0]
                 marker_color = values[1]
                 text_color = values[2]
 
-                # Call Bezier curve calculation function (dummy function here)
+                # 调用贝塞尔曲线计算函数
                 x_adjusted, y_points, bezier_curves = get_bezier_curve_points_flat(
                 original_x, original_y, adjustment_factor, width_factor, adjustment_factor_2
                 )
-                
-                if  x_adjusted[0] == 'no_data': # no data line
+
+                if  x_adjusted[0] == 'no_data': # 无数据行
                     continue
 
-                # Scale Bezier curves
+                # 缩放贝塞尔曲线
                 for curve in bezier_curves:
                     X = curve['X']
                     Y = curve['Y']
@@ -843,20 +1029,20 @@ def interactive_bezier_curve():
                         X[i] = X[i] * scale_factor *scale_factor_x* 10 + 50
                         Y[i] = 500 - Y[i] * scale_factor*scale_factor_y / 2
 
-                # Scale adjusted coordinates and potential energy values
+                # 缩放调整后的坐标和势能值
                 scaled_x_adjusted = [x * scale_factor*scale_factor_x * 10 + 50 for x in x_adjusted]
                 scaled_y_points = [500 - y * scale_factor*scale_factor_y / 2 for y in y_points]
 
                 fontsize = line_width*15 # 随便设置的大小
 
-                # Draw Bezier curves based on connect_type
+                # 根据connect_type绘制贝塞尔曲线
                 for i, curve in enumerate(bezier_curves):
                     X = curve['X']
                     Y = curve['Y']
                     t = np.linspace(0, 1, 200)
 
                     if connect_type == "center":
-                        # Continuous curve
+                        # 连续曲线
                         Bx = (1 - t)**3 * X[1] + 3 * (1 - t)**2 * t * X[2] + 3 * (1 - t) * t**2 * X[3] + t**3 * X[4]
                         By = (1 - t)**3 * Y[1] + 3 * (1 - t)**2 * t * Y[2] + 3 * (1 - t) * t**2 * Y[3] + t**3 * Y[4]
                         if line_type == "Dashed":
@@ -867,7 +1053,7 @@ def interactive_bezier_curve():
                             curve_lines.append(curve_line)
 
                     elif connect_type == "side":
-                        # Non-continuous curve with adjusted endpoints
+                        # 非连续曲线, 调整端点
                         if shape_type == "line":
                             offset = bond_length 
                         elif shape_type == "circle":
@@ -893,7 +1079,7 @@ def interactive_bezier_curve():
                             curve_line = ax.plot(Bx, By, color=curve_color,linewidth=line_width,linestyle=line_type.lower())
                             curve_lines.append(curve_line)
 
-                # Draw horizontal lines or circles
+                # 绘制水平线或圆形
                 if shape_type == "line":
                     text_shape_space = bond_length
                     text_shape_space_y = bond_width/2 + font_size*0.5
@@ -905,7 +1091,7 @@ def interactive_bezier_curve():
                                 already_draw_target.append(coordinate)
                             else:
                                 continue
-                            print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space, text_shape_space_y,idx, y, center_x,target_layout,target_location)
+                            print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space, text_shape_space_y,idx, y, center_x,target_layout,target_location, current_font_name)
                             hline = ax.hlines(y, center_x - bond_length, center_x + bond_length, colors=marker_color, linewidth=key_width,zorder=100)
                             hlines.append(hline)
                             
@@ -916,7 +1102,7 @@ def interactive_bezier_curve():
                                 already_draw_target.append(coordinate)
                             else:
                                 continue
-                            print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space,text_shape_space_y, idx, y, x,target_layout,target_location)
+                            print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space,text_shape_space_y, idx, y, x,target_layout,target_location, current_font_name)
                             hline = ax.hlines(y, x - bond_length, x + bond_length, colors=marker_color, linewidth=key_width,zorder=100)
                             hlines.append(hline)
                             
@@ -932,7 +1118,7 @@ def interactive_bezier_curve():
                                 already_draw_target.append(coordinate)
                             else:
                                 continue
-                            print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space, text_shape_space_y,idx, y, center_x,target_layout,target_location)
+                            print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space, text_shape_space_y,idx, y, center_x,target_layout,target_location, current_font_name)
                             circle = plt.Circle((center_x, y), radius, color=marker_color, fill=True,zorder=100)
                             ax.add_artist(circle)
                             
@@ -958,7 +1144,7 @@ def interactive_bezier_curve():
                             already_draw_target.append(coordinate)
                         else:
                             continue
-                        print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space,text_shape_space_y, idx, y, x,target_layout,target_location)
+                        print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space,text_shape_space_y, idx, y, x,target_layout,target_location, current_font_name)
 
 
             
@@ -1011,126 +1197,177 @@ def interactive_bezier_curve():
         except ValueError:
             tk.messagebox.showerror("Input Error", "Please enter valid numeric values.")
 
-    def print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space,text_shape_space_y, idx, y, center_x,target_layout,target_location):
+    def print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space,text_shape_space_y, idx, y, center_x,target_layout,target_location, font_name='Arial'):
+        show_numbers = show_numbers_var.get()
+        show_targets = show_targets_var.get()
+
+        # 调试: 打印使用的字体名称(仅第一次)
+        if idx == 0:
+            print(f"绘图使用字体: {font_name}")
+
         if location[idx].lower() == 'sc':
-            energy_text = ax.text(center_x, y-text_space-text_shape_space_y, str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-            if target[idx]:
-                target_text = ax.text(center_x, y+text_space+text_shape_space_y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+            if show_numbers:
+                energy_text = ax.text(center_x, y-text_space-text_shape_space_y, str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+            if target[idx] and show_targets:
+                target_text = ax.text(center_x, y+text_space+text_shape_space_y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
         elif location[idx].lower() == 'cw':
-            if target[idx]:
-                combine_text = f'{original_y[idx]} {target[idx]}'
-            else:
-                combine_text = str(original_y[idx])
-            energy_text = ax.text(center_x, y-text_space-text_shape_space_y, combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+            if show_numbers:
+                if target[idx] and show_targets:
+                    combine_text = f'{original_y[idx]} {target[idx]}'
+                else:
+                    combine_text = str(original_y[idx])
+                energy_text = ax.text(center_x, y-text_space-text_shape_space_y, combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+            elif target[idx] and show_targets:
+                energy_text = ax.text(center_x, y-text_space-text_shape_space_y, str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
         elif location[idx].lower() == 'cs':
-            if target[idx]:
-                combine_text = f'{original_y[idx]} {target[idx]}'
-            else:
-                combine_text = str(original_y[idx])
-            energy_text = ax.text(center_x, y+text_space+text_shape_space_y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+            if show_numbers:
+                if target[idx] and show_targets:
+                    combine_text = f'{original_y[idx]} {target[idx]}'
+                else:
+                    combine_text = str(original_y[idx])
+                energy_text = ax.text(center_x, y+text_space+text_shape_space_y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+            elif target[idx] and show_targets:
+                energy_text = ax.text(center_x, y+text_space+text_shape_space_y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
         elif location[idx].lower() == 'ca':
-            if target[idx]:
-                combine_text = f'{original_y[idx]} {target[idx]}'
-            else:
-                combine_text = str(original_y[idx])
-            energy_text = ax.text(center_x-text_space-text_shape_space-len(combine_text)/2*font_size*0.5, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+            if show_numbers:
+                if target[idx] and show_targets:
+                    combine_text = f'{original_y[idx]} {target[idx]}'
+                else:
+                    combine_text = str(original_y[idx])
+                energy_text = ax.text(center_x-text_space-text_shape_space-len(combine_text)/2*font_size*0.5, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+            elif target[idx] and show_targets:
+                energy_text = ax.text(center_x-text_space-text_shape_space-len(str(target[idx]))/2*font_size*0.5, y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
         elif location[idx].lower() == 'cd':
-            if target[idx]:
-                combine_text = f'{original_y[idx]} {target[idx]}'
-            else:
-                combine_text = str(original_y[idx])
-            energy_text = ax.text(center_x+text_space+text_shape_space+len(combine_text)/2*font_size*0.5, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+            if show_numbers:
+                if target[idx] and show_targets:
+                    combine_text = f'{original_y[idx]} {target[idx]}'
+                else:
+                    combine_text = str(original_y[idx])
+                energy_text = ax.text(center_x+text_space+text_shape_space+len(combine_text)/2*font_size*0.5, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+            elif target[idx] and show_targets:
+                energy_text = ax.text(center_x+text_space+text_shape_space+len(str(target[idx]))/2*font_size*0.5, y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
         elif location[idx].lower() == 'cc':
-            if target[idx]:
-                combine_text = f'{original_y[idx]} {target[idx]}'
-            else:
-                combine_text = str(original_y[idx]) 
-            energy_text = ax.text(center_x, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})  
+            if show_numbers:
+                if target[idx] and show_targets:
+                    combine_text = f'{original_y[idx]} {target[idx]}'
+                else:
+                    combine_text = str(original_y[idx])
+                energy_text = ax.text(center_x, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+            elif target[idx] and show_targets:
+                energy_text = ax.text(center_x, y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})  
 
         elif location[idx].lower() == 'sw':
-            energy_text = ax.text(center_x, y-text_space-text_shape_space_y, str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-            if target[idx]:
-                target_text = ax.text(center_x, y-text_space-font_size-text_shape_space_y, str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+            if show_numbers:
+                energy_text = ax.text(center_x, y-text_space-text_shape_space_y, str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+            if target[idx] and show_targets:
+                target_text = ax.text(center_x, y-text_space-font_size-text_shape_space_y, str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
         elif location[idx].lower() == 'ss':
-            energy_text = ax.text(center_x, y+text_space+text_shape_space_y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-            if target[idx]:
-                target_text = ax.text(center_x, y+text_space+font_size+text_shape_space_y, str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+            if show_numbers:
+                energy_text = ax.text(center_x, y+text_space+text_shape_space_y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+            if target[idx] and show_targets:
+                target_text = ax.text(center_x, y+text_space+font_size+text_shape_space_y, str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
         elif location[idx].lower() == 'sa':
-            if target[idx]:
-                energy_text = ax.text(center_x-text_space-text_shape_space-len(str(original_y[idx]))/2*font_size*0.5, y-font_size/2 , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-                target_text = ax.text(center_x-text_space-text_shape_space-len(str(target[idx]))/2*font_size*0.5, y+font_size/2 , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+            if target[idx] and show_targets:
+                if show_numbers:
+                    energy_text = ax.text(center_x-text_space-text_shape_space-len(str(original_y[idx]))/2*font_size*0.5, y-font_size/2 , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                target_text = ax.text(center_x-text_space-text_shape_space-len(str(target[idx]))/2*font_size*0.5, y+font_size/2 , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
             else:
-                energy_text = ax.text(center_x-text_space-text_shape_space-len(str(original_y[idx]))/2*font_size*0.5, y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                if show_numbers:
+                    energy_text = ax.text(center_x-text_space-text_shape_space-len(str(original_y[idx]))/2*font_size*0.5, y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
         elif location[idx].lower() == 'sd':
-            if target[idx]:
-                energy_text = ax.text(center_x+text_space+text_shape_space+len(str(original_y[idx]))/2*font_size*0.5, y-font_size/2 , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-                target_text = ax.text(center_x+text_space+text_shape_space+len(str(target[idx]))/2*font_size*0.5, y+font_size/2 , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+            if target[idx] and show_targets:
+                if show_numbers:
+                    energy_text = ax.text(center_x+text_space+text_shape_space+len(str(original_y[idx]))/2*font_size*0.5, y-font_size/2 , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                target_text = ax.text(center_x+text_space+text_shape_space+len(str(target[idx]))/2*font_size*0.5, y+font_size/2 , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
             else:
-                energy_text = ax.text(center_x+text_space+text_shape_space+len(str(original_y[idx]))/2*font_size*0.5, y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                if show_numbers:
+                    energy_text = ax.text(center_x+text_space+text_shape_space+len(str(original_y[idx]))/2*font_size*0.5, y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
         
         else:
             if target_layout == 'sperate':
                 if target_location == 'c': #sc
-                    energy_text = ax.text(center_x, y-text_space-text_shape_space_y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-                    energy_texts.append(energy_text)
-                    if target[idx]:
-                        target_text = ax.text(center_x, y+text_space+text_shape_space_y, str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                    if show_numbers:
+                        energy_text = ax.text(center_x, y-text_space-text_shape_space_y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                        energy_texts.append(energy_text)
+                    if target[idx] and show_targets:
+                        target_text = ax.text(center_x, y+text_space+text_shape_space_y, str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
                         target_texts.append(target_text)
                 elif target_location == 'w': #sw
-                    energy_text = ax.text(center_x, y-text_space-text_shape_space_y  , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-                    if target[idx]:
-                        target_text = ax.text(center_x, y-text_space-font_size-text_shape_space_y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-                elif target_location == 's': #ss   
-                    energy_text = ax.text(center_x, y+text_space+text_shape_space_y  , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-                    if target[idx]:
-                        target_text = ax.text(center_x, y+text_space+font_size+text_shape_space_y  , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                    if show_numbers:
+                        energy_text = ax.text(center_x, y-text_space-text_shape_space_y  , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                    if target[idx] and show_targets:
+                        target_text = ax.text(center_x, y-text_space-font_size-text_shape_space_y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                elif target_location == 's': #ss
+                    if show_numbers:
+                        energy_text = ax.text(center_x, y+text_space+text_shape_space_y  , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                    if target[idx] and show_targets:
+                        target_text = ax.text(center_x, y+text_space+font_size+text_shape_space_y  , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
                 elif target_location == 'a': #sa
-                    if target[idx]:
-                        energy_text = ax.text(center_x-text_space-text_shape_space-len(str(original_y[idx]))/2*font_size*0.5, y-font_size/2 , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-                        target_text = ax.text(center_x-text_space-text_shape_space-len(str(target[idx]))/2*font_size*0.5, y+font_size/2 , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                    if target[idx] and show_targets:
+                        if show_numbers:
+                            energy_text = ax.text(center_x-text_space-text_shape_space-len(str(original_y[idx]))/2*font_size*0.5, y-font_size/2 , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                        target_text = ax.text(center_x-text_space-text_shape_space-len(str(target[idx]))/2*font_size*0.5, y+font_size/2 , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
                     else:
-                        energy_text = ax.text(center_x-text_space-text_shape_space-len(str(original_y[idx]))/2*font_size*0.5, y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                        if show_numbers:
+                            energy_text = ax.text(center_x-text_space-text_shape_space-len(str(original_y[idx]))/2*font_size*0.5, y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
                 elif target_location == 'd': #sd
-                    if target[idx]:
-                        energy_text = ax.text(center_x+text_space+text_shape_space+len(str(original_y[idx]))/2*font_size*0.5, y-font_size/2 , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-                        target_text = ax.text(center_x+text_space+text_shape_space+len(str(target[idx]))/2*font_size*0.5, y+font_size/2 , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                    if target[idx] and show_targets:
+                        if show_numbers:
+                            energy_text = ax.text(center_x+text_space+text_shape_space+len(str(original_y[idx]))/2*font_size*0.5, y-font_size/2 , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                        target_text = ax.text(center_x+text_space+text_shape_space+len(str(target[idx]))/2*font_size*0.5, y+font_size/2 , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
                     else:
-                        energy_text = ax.text(center_x+text_space+text_shape_space+len(str(original_y[idx]))/2*font_size*0.5, y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
-                
+                        if show_numbers:
+                            energy_text = ax.text(center_x+text_space+text_shape_space+len(str(original_y[idx]))/2*font_size*0.5, y , str(original_y[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+
             elif target_layout == 'combine':
                 if target_location == 'c': #cc
-                    if target[idx]:
-                        combine_text = f'{original_y[idx]} {target[idx]}'
-                    else:
-                        combine_text = str(original_y[idx]) 
-                    energy_text = ax.text(center_x, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})  
+                    if show_numbers:
+                        if target[idx] and show_targets:
+                            combine_text = f'{original_y[idx]} {target[idx]}'
+                        else:
+                            combine_text = str(original_y[idx])
+                        energy_text = ax.text(center_x, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                    elif target[idx] and show_targets:
+                        energy_text = ax.text(center_x, y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
 
                 elif  target_location == 'w': #cw
-                    if target[idx]:
-                        combine_text = f'{original_y[idx]} {target[idx]}'
-                    else:
-                        combine_text = str(original_y[idx])
-                    energy_text = ax.text(center_x, y-text_space-text_shape_space_y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                    if show_numbers:
+                        if target[idx] and show_targets:
+                            combine_text = f'{original_y[idx]} {target[idx]}'
+                        else:
+                            combine_text = str(original_y[idx])
+                        energy_text = ax.text(center_x, y-text_space-text_shape_space_y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                    elif target[idx] and show_targets:
+                        energy_text = ax.text(center_x, y-text_space-text_shape_space_y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
 
-                elif  target_location == 's': #cs  
-                    if target[idx]:
-                        combine_text = f'{original_y[idx]} {target[idx]}'
-                    else:
-                        combine_text = str(original_y[idx])
-                    energy_text = ax.text(center_x, y+text_space+text_shape_space_y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                elif  target_location == 's': #cs
+                    if show_numbers:
+                        if target[idx] and show_targets:
+                            combine_text = f'{original_y[idx]} {target[idx]}'
+                        else:
+                            combine_text = str(original_y[idx])
+                        energy_text = ax.text(center_x, y+text_space+text_shape_space_y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                    elif target[idx] and show_targets:
+                        energy_text = ax.text(center_x, y+text_space+text_shape_space_y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
                 elif  target_location == 'a': #ca
-                    if target[idx]:
-                        combine_text = f'{original_y[idx]} {target[idx]}'
-                    else:
-                        combine_text = str(original_y[idx])
-                    energy_text = ax.text(center_x-text_space-text_shape_space-len(combine_text)/2*font_size*0.5, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                    if show_numbers:
+                        if target[idx] and show_targets:
+                            combine_text = f'{original_y[idx]} {target[idx]}'
+                        else:
+                            combine_text = str(original_y[idx])
+                        energy_text = ax.text(center_x-text_space-text_shape_space-len(combine_text)/2*font_size*0.5, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                    elif target[idx] and show_targets:
+                        energy_text = ax.text(center_x-text_space-text_shape_space-len(str(target[idx]))/2*font_size*0.5, y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
 
-                elif  target_location == 'd': #cd     
-                    if target[idx]:
-                        combine_text = f'{original_y[idx]} {target[idx]}'
-                    else:
-                        combine_text = str(original_y[idx])
-                    energy_text = ax.text(center_x+text_space+text_shape_space+len(combine_text)/2*font_size*0.5, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': 'Arial'})
+                elif  target_location == 'd': #cd
+                    if show_numbers:
+                        if target[idx] and show_targets:
+                            combine_text = f'{original_y[idx]} {target[idx]}'
+                        else:
+                            combine_text = str(original_y[idx])
+                        energy_text = ax.text(center_x+text_space+text_shape_space+len(combine_text)/2*font_size*0.5, y , combine_text, color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
+                    elif target[idx] and show_targets:
+                        energy_text = ax.text(center_x+text_space+text_shape_space+len(str(target[idx]))/2*font_size*0.5, y , str(target[idx]), color=text_color,fontsize=fontsize, ha='center', va='center_baseline',fontdict={'family': font_name})
 
     class CustomNavigationToolbar(NavigationToolbar2Tk):
         def __init__(self, canvas, parent):
@@ -1223,10 +1460,10 @@ def interactive_bezier_curve():
         def save_figure(self):
             """重写保存按钮行为"""
 
-            # 弹出对话框，获取用户输入的 DPI 值
+            # 弹出对话框, 获取用户输入的DPI值
             dpi = simpledialog.askinteger("Save Figure", "Enter DPI (e.g., 100, 200, 300):", minvalue=50, maxvalue=1000)
             if dpi is None:
-                print("Save canceled by user")
+                print("User cancelled save")
                 return
 
             # 弹出文件保存对话框
@@ -1235,12 +1472,12 @@ def interactive_bezier_curve():
                                                             ("JPEG files", "*.jpg"),
                                                             ("All files", "*.*")])
             if not file_path:
-                print("Save canceled by user")
+                print("User cancelled save")
                 return
 
             # 保存图像
             self.canvas.figure.savefig(file_path, dpi=dpi)
-            print(f"Figure saved to {file_path} with DPI {dpi}")
+            print(f"Image saved to {file_path}, DPI: {dpi}")
 
     def show_all():
         ax.set_xlim(-1, 1)
@@ -1296,17 +1533,17 @@ def interactive_bezier_curve():
         ax.grid(grid_var.get())
         canvas.draw()
         
-    # Create main window
+    # 创建主窗口
     root = tk.Tk()
     root.title("Interactive Bezier Curve Adjustments")
     style = ttk.Style(root)
-    style.theme_use("vista")  # 使用 'vista' 主题
+    style.theme_use("vista")  # 使用'vista'主题
     main_frame = tk.Frame(root)
     main_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
 
 
-    # Add Matplotlib figure
+    # 添加Matplotlib图形
     global fig
     fig = Figure(figsize=(8, 6),dpi=100)
     ax = fig.add_subplot(111)
@@ -1398,11 +1635,11 @@ def interactive_bezier_curve():
         def __init__(self, table_frame, table):
             self.table_frame = table_frame
             self.table = table
-            # Bind right-click event
+            # 绑定右键点击事件
             self.columns = self.table["columns"]
             self.table.bind("<Button-3>", self.show_context_menu)
 
-            # Create context menu
+            # 创建上下文菜单
             self.menu = tk.Menu(root, tearoff=0)
             self.menu.add_command(label="Delete Row", command=self.delete_row)
             self.menu.add_command(label="Delete Column", command=self.delete_column)
@@ -1413,7 +1650,7 @@ def interactive_bezier_curve():
             self.selected_column = None
 
         def show_context_menu(self, event):
-            # Get the row and column at click position
+            # 获取点击位置的行和列
             region = self.table.identify("region", event.x, event.y)
             if region == "cell":
                 row_id = self.table.identify_row(event.y)
@@ -1424,9 +1661,9 @@ def interactive_bezier_curve():
                     if col_index >= 4:
                         self.selected_item = row_id
                         self.selected_column = column
-                        # Highlight the selected row
+                        # 高亮选中的行
                         self.table.selection_set(row_id)
-                        # Show context menu
+                        # 显示上下文菜单
                         self.menu.post(event.x_root, event.y_root)
 
         def delete_row(self):
@@ -1438,7 +1675,7 @@ def interactive_bezier_curve():
             if self.selected_column:
                 existing_columns = list(self.table['columns'])
                 if len(existing_columns) <= 3:
-                    print("无法删除：至少需要保留3列。")
+                    print("Cannot delete: must keep at least 3 columns.")
                     return
                 col_index = int(self.selected_column.replace("#", "")) - 1
                 existing_columns.pop(col_index)
@@ -1482,182 +1719,380 @@ def interactive_bezier_curve():
     fig.canvas.mpl_connect('scroll_event', on_zoom)
 
     def create_table_window():
-        # Create a separate window for the table
+
+        def on_double_click(event):
+            # 获取点击区域
+            region = table.identify("region", event.x, event.y)
+            if region == "cell":
+                # 获取点击的行和列
+                row_id = table.identify_row(event.y)
+                column = table.identify_column(event.x)
+                if row_id and column:
+                    column_index = int(column[1:]) - 1
+
+                    # 获取当前值
+                    item = table.item(row_id)
+                    current_value = item['values'][column_index]
+
+
+                    # 获取单元格的坐标
+                    x, y, width, height = table.bbox(row_id, column)
+
+                    if column_index in [0, 1, 2]:  # 前三列使用颜色选择
+                        # 使用颜色选择对话框
+                        if current_value.startswith('#'):
+                            default_color = current_value
+                        else:
+                            default_color = "#000000" 
+                        color_code = colorchooser.askcolor(initialcolor=default_color, title="Select Color")[1]
+                        if color_code:
+                            # 更新 Treeview 中的值
+                            table.set(row_id, column=columns[column_index], value=color_code)
+                            update_plot()
+
+                    else:  # 其他列使用文本输入框编辑
+                        # 创建 Entry 控件
+                        edit_entry = tk.Entry(table_frame)
+                        edit_entry.place(x=x, y=y, width=width, height=height)
+                        edit_entry.insert(0, current_value)
+                        edit_entry.focus()
+
+                        # 处理失去焦点事件以保存更改
+                        def on_focus_out(event):
+                            new_value = edit_entry.get()
+                            values = list(table.item(row_id, 'values'))
+                            values[column_index] = new_value
+                            table.item(row_id, values=values)
+                            # 销毁 Entry 控件
+                            edit_entry.destroy()
+
+                            if column_index > 2:
+                                if current_value == '' or current_value == '0.0':
+                                    show_all()
+
+                        # 绑定失去焦点事件，自动保存编辑内容并销毁 Entry
+                        edit_entry.bind('<FocusOut>', on_focus_out)
+
+        # 创建一个独立的表格窗口
         table_window = tk.Toplevel(root)
-        table_window.resizable(True, True) 
+        table_window.resizable(True, True)
         table_window.title("Energy Data Table")
+        table_frame = tk.Frame(table_window)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Create the sheet
-        sheet = tksheet.Sheet(table_window)
-        sheet.enable_bindings((
-            "single_select",
-            "row_select",
-            "column_select",
-            "drag_select",
-            "select_all",
-            "column_width_resize",
-            "arrowkeys",
-            "right_click_popup_menu",
-            "rc_select",
-            "rc_insert_row",
-            "rc_delete_row",
-            "copy",
-            "cut",
-            "paste",
-            "delete",
-            "undo",
-            "edit_cell"
-        ))
+        table_window.geometry("650x200")  # 设置初始窗口大小
 
-        # Set initial data
-        initial_data = [['#000000', '#000000', '#000000', '0.0', '0.0', '0.0']]
-        headers = ['Curve Color', 'Marker Color', 'Text Color', 'E1', 'E2', 'E3']
-        sheet.headers(headers)
-        sheet.data = initial_data
+        # 创建表格的容器框架
+        table_frame = tk.Frame(table_window, width=600, height=200)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Set column widths
-        for i in range(len(headers)):
-            sheet.column_width(column=i, width=100)
+        # 定义表格列, 包括颜色选择列
+        columns = ('Curve Color', 'Marker Color', 'Text Color') + tuple(f'E{i+1}' for i in range(3))
+        table = ttk.Treeview(table_frame, columns=columns, show='headings', height=5)
+        table.insert('', 'end', values=('#000000','#000000','#000000', 0.0, 0.0, 0.0))
 
-        sheet.pack(fill="both", expand=True, padx=5, pady=5)
+        # 创建水平滚动条
+        scrollbar_x = ttk.Scrollbar(table_frame, orient='horizontal', command=table.xview)
+        scrollbar_y = ttk.Scrollbar(table_frame, orient='vertical', command=table.yview)
+        table.configure(xscrollcommand=scrollbar_x.set, yscrollcommand=scrollbar_y.set)
 
-        # Right click menu functionality
-        def right_click_menu(event):
-            popup = tk.Menu(table_window, tearoff=0)
-            popup.add_command(label="Add Row", command=add_row)
-            popup.add_command(label="Add Column", command=add_column)
-            popup.add_command(label="Delete Row", command=delete_row)
-            popup.add_command(label="Delete Column", command=delete_column)
-            popup.add_separator()
-            popup.add_command(label="Save Data", command=save_table_data)
-            popup.add_command(label="Load Data", command=load_table_data)
+        # 放置滚动条和表格
+        scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+        scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        table.pack(fill=tk.BOTH, expand=True)
 
-            try:
-                popup.tk_popup(event.x_root, event.y_root, 0)
-            finally:
-                popup.grab_release()
+        # 将右键菜单绑定到表格
+        right_click_menu = RightClickMenu(table_frame, table)
 
-        sheet.bind("<Button-3>", right_click_menu)
 
-        # Handle cell editing for color columns
-        def on_cell_edit(event):
-            r, c = event.row, event.column
-            current_value = sheet.get_cell_data(r, c)
+        for col in table['columns']:
+            table.heading(col, text=col)
+            table.column(col, width=100, anchor='center')
 
-            if c in [0, 1, 2]:  # Color columns
-                if current_value.startswith('#'):
-                    default_color = current_value
-                else:
-                    default_color = "#000000"
+        # 绑定双击事件, 将相应的编辑控件显示出来
+        table.bind("<Double-1>", on_double_click)
 
-                color_code = colorchooser.askcolor(initialcolor=default_color, title="选择颜色")[1]
-                if color_code:
-                    sheet.set_cell_data(r, c, value=color_code)
-                    update_plot()
-                return "break"  # Prevent default text editing
+        # 添加事件监听器以在表格数据更改时自动更新绘图
+        table.bind("<ButtonRelease-1>", update_plot)
 
-            elif c > 2:  # Numeric columns
-                if current_value == '' or current_value == '0.0':
-                    show_all()
-
-        sheet.bind("<<SheetModified>>", on_cell_edit)
-
-        # Add column function
+            # 添加新列的函数
         def add_column():
-            current_headers = sheet.headers()
-            new_col_name = f'E{len(current_headers) - 2}'
-            new_headers = current_headers + [new_col_name]
-            sheet.headers(new_headers)
+            # 获取当前所有的列
+            existing_columns = list(table['columns'])
 
-            # Add empty data for new column
-            new_data = []
-            for row in sheet.get_sheet_data():
-                new_row = list(row) + ['']
-                new_data.append(new_row)
-            sheet.data = new_data
+            # 创建新列
+            new_column = f'E{len(existing_columns) - 2}'
+            existing_columns.append(new_column)
+            table['columns'] = tuple(existing_columns)  # 更新 Treeview 的列配置
 
-            # Set column width
-            sheet.column_width(column=len(new_headers)-1, width=100)
+            # 为所有列设置相同的默认宽度
+            default_column_width = 100
 
-        # Add row function
+            # 重新设置所有列的标题和样式
+            for col in existing_columns:
+                # 设置所有列为默认宽度，禁用自动拉伸
+                table.heading(col, text=col)
+                table.column(col, width=default_column_width, anchor='center', stretch=False)
+
+            # 更新每一行的数据，添加新列的默认值
+            for row in table.get_children():
+                current_values = list(table.item(row)['values'])
+                current_values.append('')
+                table.item(row, values=current_values)
+
         def add_row():
-            num_cols = len(sheet.headers())
-            new_row = ['#000000', '#000000', '#000000'] + [''] * (num_cols - 3)
-            sheet.insert_row(values=new_row)
+            # 获取当前表格的列数
+            num_columns = len(table['columns'])
 
-        # Delete column function
+            # 根据列数添加新行，初始值设为 0.0
+            new_row_values = ('#000000', '#000000', '#000000') + ('',) * (num_columns - 3)
+
+            # 插入新行到表格的末尾
+            table.insert('', 'end', values=new_row_values)
+
         def delete_column():
-            current_headers = sheet.headers()
-            if len(current_headers) <= 3:
-                print("无法删除：至少需要保留3列。")
+            # 获取当前所有的列
+            existing_columns = list(table['columns'])
+
+            # 确保至少保留3列
+            if len(existing_columns) <= 3:
+                print("Cannot delete: must keep at least 3 columns.")
                 return
 
-            # Get data without last column
-            new_data = []
-            for row in sheet.get_sheet_data():
-                new_row = list(row)[:-1]
-                new_data.append(new_row)
+            # 删除最后一个列
+            column_to_delete = existing_columns.pop()  # 获取要删除的列名
+            table['columns'] = tuple(existing_columns)  # 更新 Treeview 的列配置
 
-            # Update headers and data
-            sheet.headers(current_headers[:-1])
-            sheet.data = new_data
+            # 为所有剩余列重新设置标题和样式
+            default_column_width = 100
+            for col in existing_columns:
+                # 设置每列为默认宽度，禁用自动拉伸
+                table.heading(col, text=col)
+                table.column(col, width=default_column_width, anchor='center', stretch=False)
 
-        # Delete row function
+            # 更新每一行的数据，删除对应的列的值
+            for row in table.get_children():
+                current_values = list(table.item(row)['values'])
+                if len(current_values) > 0:
+                    current_values.pop()  # 删除最后一列的值
+                table.item(row, values=current_values)
+
         def delete_row():
-            if len(sheet.get_sheet_data()) > 0:
-                sheet.delete_row()
+            # 检查表格中是否有行
+            if len(table.get_children()) > 0:
+                # 获取所有行并删除最后一行
+                last_item = table.get_children()[-1]
+                table.delete(last_item)
+            else:
+                print("No rows to delete in the table.")
 
-        # Save table data function
+        # 用于跟踪当前打开的文件路径
+        current_file_path = [None]  # 使用列表以便在嵌套函数中修改
+
+        # Function to save the table data
         def save_table_data():
-            if os.path.exists('table_data.json'):
-                response = messagebox.askyesno("Confirm", "The file 'table_data.json' already exists. Do you want to overwrite it?")
-                if not response:
-                    print("Save operation cancelled.")
+            """
+            功能:
+                保存表格数据到文件, 支持json/xlsx/csv格式
+            参数:
+                无
+            返回:
+                无
+            """
+            # 收集表格数据
+            data = []
+            for row in table.get_children():
+                row_data = table.item(row)['values']
+                data.append(row_data)
+
+            if not data:
+                messagebox.showwarning("Warning", "Table is empty, no data to save")
+                return
+
+            # 如果有当前打开的文件, 提示是否保存到该文件或另存为
+            if current_file_path[0]:
+                response = messagebox.askyesnocancel(
+                    "Save Data",
+                    f"Overwrite file {current_file_path[0]}?"
+                )
+
+                if response is None:  # User clicked cancel
+                    print("Save operation cancelled")
+                    return
+                elif response:  # User clicked yes, save to current file
+                    file_path = current_file_path[0]
+                else:  # User clicked no, save as
+                    file_path = filedialog.asksaveasfilename(
+                        title="Save As",
+                        defaultextension=".json",
+                        filetypes=[
+                            ("JSON files", "*.json"),
+                            ("Excel files", "*.xlsx"),
+                            ("CSV files", "*.csv"),
+                            ("All files", "*.*")
+                        ],
+                        initialfile=os.path.basename(current_file_path[0])
+                    )
+                    if not file_path:
+                        print("Save operation cancelled")
+                        return
+            else:
+                # 没有当前文件, 显示保存对话框
+                file_path = filedialog.asksaveasfilename(
+                    title="Save Data",
+                    defaultextension=".json",
+                    filetypes=[
+                        ("JSON files", "*.json"),
+                        ("Excel files", "*.xlsx"),
+                        ("CSV files", "*.csv"),
+                        ("All files", "*.*")
+                    ],
+                    initialfile="table_data.json"
+                )
+
+                if not file_path:
+                    print("Save operation cancelled")
                     return
 
-            data = sheet.get_sheet_data()
-            with open('table_data.json', 'w') as file:
-                json.dump(data, file)
-            print(f"Table data saved at {os.getcwd()}\\table_data.json.")
-
-        # Load table data function
-        def load_table_data():
+            # 根据文件扩展名选择保存方法
             try:
-                with open('table_data.json', 'r') as file:
-                    data = json.load(file)
+                file_ext = os.path.splitext(file_path)[1].lower()
 
+                if file_ext == '.json':
+                    # 保存为JSON格式
+                    with open(file_path, 'w', encoding='utf-8') as file:
+                        json.dump(data, file, ensure_ascii=False, indent=2)
+
+                elif file_ext == '.xlsx':
+                    # 保存为Excel格式
+                    columns = list(table['columns'])
+                    df = pd.DataFrame(data, columns=columns)
+                    df.to_excel(file_path, index=False, engine='openpyxl')
+
+                elif file_ext == '.csv':
+                    # 保存为CSV格式
+                    columns = list(table['columns'])
+                    df = pd.DataFrame(data, columns=columns)
+                    df.to_csv(file_path, index=False, encoding='utf-8-sig')
+
+                else:
+                    # 默认保存为JSON格式
+                    with open(file_path, 'w', encoding='utf-8') as file:
+                        json.dump(data, file, ensure_ascii=False, indent=2)
+
+                # 更新当前文件路径
+                current_file_path[0] = file_path
+                print(f"Table data saved to: {file_path}")
+                messagebox.showinfo("Success", f"Data saved to:\n{file_path}")
+
+            except Exception as e:
+                print(f"Save failed: {str(e)}")
+                messagebox.showerror("Error", f"Save failed:\n{str(e)}")
+
+        # Function to load the table data
+        def load_table_data():
+            """
+            功能:
+                从文件加载表格数据, 支持json/xlsx/csv格式
+            参数:
+                无
+            返回:
+                无
+            """
+            # Show file selection dialog
+            file_path = filedialog.askopenfilename(
+                title="Load Data",
+                filetypes=[
+                    ("All supported files", "*.json;*.xlsx;*.csv"),
+                    ("JSON files", "*.json"),
+                    ("Excel files", "*.xlsx"),
+                    ("CSV files", "*.csv"),
+                    ("All files", "*.*")
+                ]
+            )
+
+            if not file_path:
+                print("Load operation cancelled")
+                return
+
+            try:
+                # 根据文件扩展名选择加载方法
+                file_ext = os.path.splitext(file_path)[1].lower()
+                data = []
+
+                if file_ext == '.json':
+                    # 从JSON文件加载
+                    with open(file_path, 'r', encoding='utf-8') as file:
+                        data = json.load(file)
+
+                elif file_ext == '.xlsx':
+                    # 从Excel文件加载
+                    df = pd.read_excel(file_path, engine='openpyxl')
+                    # 将NaN值替换为空字符串
+                    df = df.fillna('')
+                    data = df.values.tolist()
+
+                elif file_ext == '.csv':
+                    # 从CSV文件加载
+                    df = pd.read_csv(file_path, encoding='utf-8-sig')
+                    # 将NaN值替换为空字符串
+                    df = df.fillna('')
+                    data = df.values.tolist()
+
+                else:
+                    messagebox.showerror("Error", f"Unsupported file format: {file_ext}")
+                    return
+
+                if not data:
+                    messagebox.showwarning("Warning", "No data in file")
+                    return
+
+                # 清除当前表格
+                for row in table.get_children():
+                    table.delete(row)
+
+                # 根据数据动态设置列
                 if data:
-                    # Dynamically set headers
-                    headers = ['Curve Color', 'Marker Color', 'Text Color'] + [f'E{i+1}' for i in range(len(data[0])-3)]
-                    sheet.headers(headers)
-                    sheet.data = data
-                    show_all()
+                    # 第一行定义列数
+                    columns = ('Curve Color', 'Marker Color', 'Text Color') + tuple(f'E{i+1}' for i in range(len(data[0])-3))
+                    table['columns'] = columns
 
-                print(f"Table data loaded from {os.getcwd()}\\table_data.json.")
-            except FileNotFoundError:
-                print(f"No saved data found at {os.getcwd()}.")
+                    # 更新列标题
+                    for col in table['columns']:
+                        table.heading(col, text=col)
+                        table.column(col, width=100, anchor='center', stretch=False)
 
-        # Create buttons frame
-        buttons_frame = tk.Frame(table_window)
-        buttons_frame.pack(fill=tk.X, padx=5, pady=5)
+                # 将加载的数据插入表格
+                for row_data in data:
+                    table.insert('', 'end', values=row_data)
 
-        # Create buttons
-        add_row_button = tk.Button(buttons_frame, text="Add Row", command=add_row)
-        add_column_button = tk.Button(buttons_frame, text="Add Column", command=add_column)
-        delete_row_button = tk.Button(buttons_frame, text="Delete Row", command=delete_row)
-        delete_column_button = tk.Button(buttons_frame, text="Delete Column", command=delete_column)
-        save_button = tk.Button(buttons_frame, text="Save Data", command=save_table_data)
-        load_button = tk.Button(buttons_frame, text="Load Data", command=load_table_data)
+                show_all()
 
-        # Pack buttons
+                # 更新当前文件路径
+                current_file_path[0] = file_path
+                print(f"Table data loaded from: {file_path}")
+                messagebox.showinfo("Success", f"Data loaded from:\n{file_path}")
+
+            except Exception as e:
+                print(f"Load failed: {str(e)}")
+                messagebox.showerror("Error", f"Load failed:\n{str(e)}")
+        
+        add_row_button = tk.Button(table_frame, text="Add Row", command=add_row)
+        add_column_button = tk.Button(table_frame, text="Add Column", command=add_column)
+        delete_row_button = tk.Button(table_frame, text="Delete Row", command=delete_row)
+        delete_column_button = tk.Button(table_frame, text="Delete Column", command=delete_column)
+
+        save_button = tk.Button(table_frame, text="Save Data", command=save_table_data)
+        load_button = tk.Button(table_frame, text="Load Data", command=load_table_data)
+
+
         add_row_button.pack(side=tk.LEFT, padx=5, pady=5)
         add_column_button.pack(side=tk.LEFT, padx=5, pady=5)
         delete_row_button.pack(side=tk.LEFT, padx=5, pady=5)
         delete_column_button.pack(side=tk.LEFT, padx=5, pady=5)
         save_button.pack(side=tk.LEFT, padx=5, pady=5)
         load_button.pack(side=tk.LEFT, padx=5, pady=5)
-
-        return sheet
+        return table
 
     global table
 
@@ -1674,7 +2109,7 @@ def interactive_bezier_curve():
 
         # 创建一个新的 Frame 用于包装每一组 slider 和 entry
         row_frame = tk.Frame(control_frame,height=10)
-        row_frame.pack(fill='y', padx=5, pady=5,expand=True)
+        row_frame.pack(fill='y', padx=5, pady=2,expand=True)
 
         #存储滑条引用
         slider_frames[label] = row_frame 
@@ -1773,8 +2208,9 @@ def interactive_bezier_curve():
     add_slider_with_entry("Font Size", font_size_var, 0.0, 100.0, 1, 6)
     add_slider_with_entry("Text Space", text_space_var, 0.0, 50, 1, 6)
 
-    spacer = tk.Frame(control_frame, height=10)  # 创建一个空白 Frame，高度为 10
-    spacer.pack()
+    add_slider_with_entry("Bond Length", bond_length_var, 0.0, 40.0, 0.5, 4)
+    add_slider_with_entry("Bond Width", bond_width_var, 0.0, 10.0, 0.1, 2)
+    add_slider_with_entry("Circle Radius", radius_var, 0.0, 10.0, 0.1, 5)
 
     # 创建形状选择框
     shape_frame = tk.Frame(control_frame)
@@ -1786,13 +2222,9 @@ def interactive_bezier_curve():
     tk.Radiobutton(shape_frame, text="Circle", variable=shape_type_var, value="circle", command=update_plot).pack(side=tk.LEFT, padx=5)
     tk.Radiobutton(shape_frame, text="None", variable=shape_type_var, value="None", command=update_plot).pack(side=tk.LEFT, padx=10)
 
-    add_slider_with_entry("Bond Length", bond_length_var, 0.0, 40.0, 0.5, 4)
-    add_slider_with_entry("Bond Width", bond_width_var, 0.0, 10.0, 0.1, 2)
-    add_slider_with_entry("Circle Radius", radius_var, 0.0, 10.0, 0.1, 5)
-
     # 创建连接选择框
     connection_frame = tk.Frame(control_frame)
-    connection_frame.pack(padx=5, pady=5, anchor='w',fill='y',expand=True)
+    connection_frame.pack(padx=5, pady=2, anchor='w',fill='y',expand=True)
 
     tk.Label(connection_frame, text="Connection:").pack(side=tk.LEFT, padx=5)
     connect_type_var = tk.StringVar(value="center")
@@ -1801,7 +2233,7 @@ def interactive_bezier_curve():
 
     # 创建线性选择框
     line_type_frame = tk.Frame(control_frame)
-    line_type_frame.pack(padx=5, pady=5, anchor='w',fill='y',expand=True)
+    line_type_frame.pack(padx=5, pady=2, anchor='w',fill='y',expand=True)
 
     tk.Label(line_type_frame, text="Line Type:").pack(side=tk.LEFT, padx=5)
     line_type_var = tk.StringVar(value="Solid")
@@ -1810,7 +2242,7 @@ def interactive_bezier_curve():
 
     # 创建能量和标签的连接形式框
     target_layout_frame = tk.Frame(control_frame)
-    target_layout_frame .pack(padx=5, pady=5, anchor='w',fill='y',expand=True)
+    target_layout_frame .pack(padx=5, pady=2, anchor='w',fill='y',expand=True)
 
     tk.Label(target_layout_frame , text="Label-Energy Layout").pack(side=tk.LEFT, padx=5)
     target_layout_var = tk.StringVar(value="sperate")
@@ -1819,7 +2251,7 @@ def interactive_bezier_curve():
 
     # 创建标签位置选择框
     target_location_frame = tk.Frame(control_frame)
-    target_location_frame .pack(padx=5, pady=5, anchor='w',fill='y',expand=True)
+    target_location_frame .pack(padx=5, pady=2, anchor='w',fill='y',expand=True)
 
     tk.Label(target_location_frame , text="Target Location").pack(side=tk.LEFT, padx=5)
     target_location_var = tk.StringVar(value="c")
@@ -1835,55 +2267,75 @@ def interactive_bezier_curve():
 
     show_marker_var = tk.BooleanVar(value=False)
     checkbutton = tk.Checkbutton(options_frame, text="Show Marker", variable=show_marker_var, command=update_plot)
-    checkbutton.pack(side=tk.LEFT,padx=5, pady=5, anchor='w',fill='y')
+    checkbutton.pack(side=tk.LEFT,padx=5, pady=2, anchor='w',fill='y')
 
     grid_var = tk.BooleanVar(value=True)
     grid_checkbutton = tk.Checkbutton(options_frame, text="Show Grid", variable=grid_var, command=update_plot)
-    grid_checkbutton.pack(side=tk.LEFT,padx=5, pady=5, anchor='w',fill='y')
+    grid_checkbutton.pack(side=tk.LEFT,padx=5, pady=2, anchor='w',fill='y')
+
+    # 创建新的一行用于Show Numbers和Show Targets
+    options_frame_2 = tk.Frame(control_frame)
+    options_frame_2.pack(fill=tk.X, expand=True)
+
+    show_numbers_var = tk.BooleanVar(value=True)
+    numbers_checkbutton = tk.Checkbutton(options_frame_2, text="Show Numbers", variable=show_numbers_var, command=update_plot)
+    numbers_checkbutton.pack(side=tk.LEFT,padx=5, pady=2, anchor='w',fill='y')
+
+    show_targets_var = tk.BooleanVar(value=True)
+    targets_checkbutton = tk.Checkbutton(options_frame_2, text="Show Targets", variable=show_targets_var, command=update_plot)
+    targets_checkbutton.pack(side=tk.LEFT,padx=5, pady=2, anchor='w',fill='y')
 
 
     def hex_to_rgb(hex_color):
-        """将16进制颜色代码转换为RGB元组"""
+        """Convert hexadecimal color code to RGB tuple"""
         hex_color = hex_color.lstrip('#')
         return tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
 
     def add_colors_to_colortable(color_list):
-        """将颜色列表添加到colortable中，保留原色"""
-        # 创建根元素 <colortable>
+        """
+        功能:
+            将颜色列表添加到颜色表, 保留原始颜色
+        参数:
+            color_list: 列表, 十六进制颜色代码列表
+        返回:
+            字符串, XML格式的颜色表
+        """
+        # 创建根元素<colortable>
         colortable = ET.Element("colortable")
-        
-        # 保留原色
+
+        # 保留原始颜色
         original_colors = [
-            "#FFFFFF",  # white
-            "#000000",  # black
-            "#FF0000",  # red
-            "#FFFF00",  # yellow
-            "#00FF00",  # green
-            "#00FFFF",  # cyan
-            "#0000FF",  # blue
-            "#FF00FF"   # magenta
+            "#FFFFFF",  # 白色
+            "#000000",  # 黑色
+            "#FF0000",  # 红色
+            "#FFFF00",  # 黄色
+            "#00FF00",  # 绿色
+            "#00FFFF",  # 青色
+            "#0000FF",  # 蓝色
+            "#FF00FF"   # 品红色
         ]
-        
-        # 添加原色
+
+        # 添加原始颜色
         for color in original_colors:
             r, g, b = hex_to_rgb(color)
             color_element = ET.SubElement(colortable, "color", r=str(r), g=str(g), b=str(b))
-        
-        # 添加额外的颜色列表中的颜色
+
+        # 从颜色列表添加额外的颜色
         for color in color_list:
             r, g, b = hex_to_rgb(color)
             color_element = ET.SubElement(colortable, "color", r=str(r), g=str(g), b=str(b))
-        
+
         # 创建一个ElementTree对象并生成XML字符串
         xml_str = ET.tostring(colortable, encoding="unicode", method="xml")
-        
+
         return xml_str
     
     def export_cdxml(*args):
         global already_draw_target
         already_draw_target = []
+        nonlocal loaded_cdxml_header, loaded_font_xml, loaded_font_id
         try:
-            # Get user input parameters
+            # 获取用户输入参数
             adjustment_factor = float(adjustment_factor_var.get())
             width_factor = float(width_factor_var.get())
             adjustment_factor_2 = float(adjustment_factor_2_var.get())
@@ -1901,11 +2353,18 @@ def interactive_bezier_curve():
             target_location = target_location_var.get()
             curve_width = curve_width_var.get()
             bond_width = bond_width_var.get()
-            
+
+            # 确定使用的字体ID
+            current_font_id = int(loaded_font_id) if loaded_font_id is not None else 3
+            target_layout = target_layout_var.get()
+            target_location = target_location_var.get()
+            curve_width = curve_width_var.get()
+            bond_width = bond_width_var.get()
+
 
             connect_xml = ''
             graph_xml = ''
-            color_list  = [] # color target
+            color_list  = [] # 颜色目标
             global page_high
             global page_width
             page_high = 1
@@ -1914,34 +2373,34 @@ def interactive_bezier_curve():
 
             for row in table.get_children():
                 values = table.item(row)['values']
-                for i in values[:3]: # color target
+                for i in values[:3]: # 颜色目标
                     color_list.append(i)
 
-            color_list = list(set(color_list)) # remove same color
+            color_list = list(set(color_list)) # 移除重复颜色
             color_xml = add_colors_to_colortable(color_list)
 
-            # set y limit
+            # 设置y限制
             total_y= []
             for row in table.get_children():
                 values = table.item(row)['values']
                 for index, value in enumerate(values[3:]):
                     value = str(value)
-                    if value.strip():  # If value is not empty
+                    if value.strip():  # 如果值不为空
                         try:
                             value = parse_data(value)
                             total_y.append(float(value[0]))
 
                         except ValueError:
-                            print(f"Invalid value at row {row}, column {index + 2}. Please correct it.")
+                            print(f"Invalid value at row {row}, column {index + 2}. Please correct.")
                             return
-                        
+
             scaled_y_points = [y * scale_factor*scale_factor_y / 2 for y in total_y]
 
             for i in scaled_y_points:
                 if i > y_limit :
                     y_limit = i+100
 
-            # generate curve and target data
+            # 生成曲线和目标数据
             for row in table.get_children():
                 values = table.item(row)['values']
                 original_y = []
@@ -1950,32 +2409,32 @@ def interactive_bezier_curve():
                 original_x = []
                 for index, value in enumerate(values[3:]):
                     value = str(value)
-                    if value.strip():  # If value is not empty
+                    if value.strip():  # 如果值不为空
                         try:
                             value = parse_data(value)
                             original_y.append(float(value[0]))
                             target.append(value[1])
                             location.append(value[2])
                             original_x.append(index + 1)
-                            
+
                         except ValueError:
-                            print(f"Invalid value at row {row}, column {index + 2}. Please correct it.")
+                            print(f"Invalid value at row {row}, column {index + 2}. Please correct.")
                             return
-                        
+
                 curve_color = values[0]
                 marker_color = values[1]
                 text_color = values[2]
 
-                
-                # Call Bezier curve calculation function (dummy function here)
+
+                # 调用贝塞尔曲线计算函数
                 x_adjusted, y_points, bezier_curves = get_bezier_curve_points_flat(
                    original_x, original_y, adjustment_factor, width_factor, adjustment_factor_2
                 )
-                
-                # Scale Bezier curve
-                if  x_adjusted[0] == 'no_data': # pass empty line
+
+                # 缩放贝塞尔曲线
+                if  x_adjusted[0] == 'no_data': # 跳过空行
                     continue
-                # Scale Bezier curve
+                # 缩放贝塞尔曲线
                 for curve in bezier_curves:
                     X = curve['X']
                     Y = curve['Y']
@@ -1983,11 +2442,11 @@ def interactive_bezier_curve():
                         X[i] = X[i] * scale_factor *scale_factor_x* 10 + 50
                         Y[i] = y_limit - Y[i] * scale_factor*scale_factor_y / 2
 
-                # Scale adjusted coordinates and potential energy values
+                # 缩放调整后的坐标和势能值
                 scaled_x_adjusted = [x * scale_factor*scale_factor_x * 10 + 50 for x in x_adjusted]
                 scaled_y_points = [y_limit - y * scale_factor*scale_factor_y / 2 for y in y_points]
 
-                # auto change page width and high
+                # 自动调整页面宽度和高度
                 for x in  scaled_x_adjusted:
                     ad_page_width = math.ceil(abs(x/510))
                     if ad_page_width > page_width:
@@ -2012,7 +2471,7 @@ def interactive_bezier_curve():
                     graph_xml  += "\n".join(curves_xml)
                     rectangle_xml = generate_rectangle_xml(scaled_x_adjusted, scaled_y_points, bond_length, marker_color_index, connect_type,original_x,bond_width)
                     graph_xml  += "\n".join(rectangle_xml)
-                    text_xml = generate_text_cdxml(scaled_x_adjusted, scaled_y_points, original_y,target, location,target_layout,target_location,text_space,text_base_movement,bond_length,bond_width/2,text_color_index, connect_type, original_x,font_size,font_type=3, Z_value=70)
+                    text_xml = generate_text_cdxml(scaled_x_adjusted, scaled_y_points, original_y,target, location,target_layout,target_location,text_space,text_base_movement,bond_length,bond_width/2,text_color_index, connect_type, original_x,font_size,font_type=current_font_id, Z_value=70, show_numbers=show_numbers_var.get(), show_targets=show_targets_var.get())
                     graph_xml  += "\n".join(text_xml)
 
                 elif shape_type == "circle":
@@ -2023,7 +2482,7 @@ def interactive_bezier_curve():
                     graph_xml  += "\n".join(curves_xml)
                     circles_xml = generate_circle_xml(scaled_x_adjusted, scaled_y_points, radius, marker_color_index, connect_type,original_x)
                     graph_xml  += "\n".join(circles_xml)
-                    text_xml = generate_text_cdxml(scaled_x_adjusted, scaled_y_points, original_y,target, location,target_layout,target_location,text_space,text_base_movement,radius,radius,text_color_index, connect_type, original_x,font_size,font_type=3, Z_value=70)
+                    text_xml = generate_text_cdxml(scaled_x_adjusted, scaled_y_points, original_y,target, location,target_layout,target_location,text_space,text_base_movement,radius,radius,text_color_index, connect_type, original_x,font_size,font_type=current_font_id, Z_value=70, show_numbers=show_numbers_var.get(), show_targets=show_targets_var.get())
                     graph_xml  += "\n".join(text_xml)
                 elif shape_type == "None":
                     if width_factor == 0:
@@ -2031,7 +2490,7 @@ def interactive_bezier_curve():
                     else:
                         curves_xml = draw_curve(bezier_curves, connect_type,0,curve_color_index,line_type,original_x,curve_width)
                     graph_xml  += "\n".join(curves_xml)
-                    text_xml = generate_text_cdxml(scaled_x_adjusted, scaled_y_points, original_y,target, location,target_layout,target_location,text_space,text_base_movement,0,0,text_color_index, connect_type, original_x,font_size,font_type=3, Z_value=70)
+                    text_xml = generate_text_cdxml(scaled_x_adjusted, scaled_y_points, original_y,target, location,target_layout,target_location,text_space,text_base_movement,0,0,text_color_index, connect_type, original_x,font_size,font_type=current_font_id, Z_value=70, show_numbers=show_numbers_var.get(), show_targets=show_targets_var.get())
                     graph_xml  += "\n".join(text_xml)
 
             page_xml = f'''<page
@@ -2044,37 +2503,263 @@ def interactive_bezier_curve():
                 WidthPages="{page_width}"
                 >'''
 
-            connect_xml  += "".join(color_xml)  # add color
-            connect_xml  += "".join(font_xml)  # add font
-            connect_xml  += "".join(page_xml) # add page
-            connect_xml  += "".join(graph_xml) # add graph
+            connect_xml  += "".join(color_xml)  # 添加颜色
+            # 使用读取的font_xml, 如果没有读取则使用默认值
+            current_font_xml = loaded_font_xml if loaded_font_xml is not None else font_xml
+            connect_xml  += "".join(current_font_xml)  # 添加字体
+            connect_xml  += "".join(page_xml) # 添加页面
+            connect_xml  += "".join(graph_xml) # 添加图形
 
-            # Combine all parts into a single CDXML string
-            cdxml_string = cdxml_header + connect_xml + cdxml_footer
+            # 将所有部分组合成单个CDXML字符串
+            # 使用读取的cdxml_header, 如果没有读取则使用默认值
+            current_cdxml_header = loaded_cdxml_header if loaded_cdxml_header is not None else cdxml_header
+            cdxml_string = current_cdxml_header + connect_xml + cdxml_footer
 
-            # Save CDXML file
+            # 保存CDXML文件
             save_cdxml_file(cdxml_string)
-            print(f"The CDXML file has been successfully generated: {os.getcwd()}\\output.cdxml.")
-            
+
         except ValueError:
-            print("Input Error", "Please enter valid numeric values.")
-    
+            print("Input error, please enter valid numeric values.")
+
+    def load_cdxml_style():
+        """
+        功能:
+            从CDXML文件读取风格信息(cdxml_header和font_xml)
+        参数:
+            无
+        返回:
+            无
+        """
+        nonlocal loaded_cdxml_header, loaded_font_xml, loaded_font_id, loaded_font_name
+
+        # 显示文件选择对话框
+        file_path = filedialog.askopenfilename(
+            filetypes=[("CDXML files", "*.cdxml"), ("All files", "*.*")],
+            title="选择CDXML文件以读取风格信息"
+        )
+
+        if file_path:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # 解析XML
+                root = ET.fromstring(content)
+
+                # 提取cdxml_header (CDXML标签的属性)
+                cdxml_attrs = root.attrib
+                header_lines = ['<?xml version="1.0" encoding="UTF-8" ?>']
+                header_lines.append('<!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >')
+                header_lines.append('<CDXML')
+
+                for key, value in cdxml_attrs.items():
+                    # 转义特殊字符
+                    value_escaped = value.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&apos;')
+                    header_lines.append(f' {key}="{value_escaped}"')
+
+                header_lines.append('>')
+                loaded_cdxml_header = '\n'.join(header_lines)
+
+                # 提取font_xml (fonttable标签)
+                fonttable = root.find('fonttable')
+                if fonttable is not None:
+                    # 将fonttable转换为字符串
+                    loaded_font_xml = ET.tostring(fonttable, encoding='unicode', method='xml')
+
+                    # 提取第一个字体的ID和名称 (通常用于文本标签)
+                    fonts = fonttable.findall('font')
+                    if fonts:
+                        # 优先使用非Symbol字体
+                        for font in fonts:
+                            font_name = font.get('name', '')
+                            if font_name.lower() != 'symbol':
+                                loaded_font_id = font.get('id')
+                                loaded_font_name = font_name
+                                break
+                        # 如果没有找到非Symbol字体, 使用第一个字体
+                        if loaded_font_id is None:
+                            loaded_font_id = fonts[0].get('id')
+                            loaded_font_name = fonts[0].get('name', 'Arial')
+                else:
+                    # 如果没有找到fonttable, 使用默认值
+                    loaded_font_xml = '''<fonttable>
+<font id="3" charset="iso-8859-1" name="Arial"/>
+</fonttable>'''
+                    loaded_font_id = '3'
+                    loaded_font_name = 'Arial'
+
+                # 刷新画布以应用新字体
+                update_plot()
+                messagebox.showinfo("成功", f"已从文件读取CDXML风格信息: {file_path}\n字体ID: {loaded_font_id}\n字体名称: {loaded_font_name}")
+
+            except Exception as e:
+                messagebox.showerror("错误", f"读取CDXML文件失败: {str(e)}")
+
+    def save_config():
+        """
+        功能:
+            将当前所有配置参数保存到JSON文件
+        参数:
+            无
+        返回:
+            无
+        """
+        nonlocal loaded_cdxml_header, loaded_font_xml, loaded_font_id, loaded_font_name
+        config = {
+            'adjustment_factor': adjustment_factor_var.get(),
+            'width_factor': width_factor_var.get(),
+            'adjustment_factor_2': adjustment_factor_2_var.get(),
+            'scale_factor': scale_factor_var.get(),
+            'scale_factor_x': scale_factor_x_var.get(),
+            'scale_factor_y': scale_factor_y_var.get(),
+            'bond_length': bond_length_var.get(),
+            'radius': radius_var.get(),
+            'font_size': font_size_var.get(),
+            'text_space': text_space_var.get(),
+            'curve_width': curve_width_var.get(),
+            'bond_width': bond_width_var.get(),
+            'shape_type': shape_type_var.get(),
+            'connect_type': connect_type_var.get(),
+            'line_type': line_type_var.get(),
+            'target_layout': target_layout_var.get(),
+            'target_location': target_location_var.get(),
+            'show_marker': show_marker_var.get(),
+            'grid': grid_var.get(),
+            'cdxml_header': loaded_cdxml_header,
+            'font_xml': loaded_font_xml,
+            'font_id': loaded_font_id,
+            'font_name': loaded_font_name
+        }
+
+        # 显示文件选择对话框
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            title="Save Configuration"
+        )
+
+        if file_path:
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=4, ensure_ascii=False)
+                messagebox.showinfo("Success", f"Configuration saved to: {file_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save configuration: {str(e)}")
+
+    def load_config():
+        """
+        功能:
+            从JSON文件加载配置参数并应用到当前界面
+        参数:
+            无
+        返回:
+            无
+        """
+        nonlocal loaded_cdxml_header, loaded_font_xml, loaded_font_id, loaded_font_name
+        # 显示文件选择对话框
+        file_path = filedialog.askopenfilename(
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            title="Load Configuration"
+        )
+
+        if file_path:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+
+                # 将配置应用到变量
+                if 'adjustment_factor' in config:
+                    adjustment_factor_var.set(config['adjustment_factor'])
+                if 'width_factor' in config:
+                    width_factor_var.set(config['width_factor'])
+                if 'adjustment_factor_2' in config:
+                    adjustment_factor_2_var.set(config['adjustment_factor_2'])
+                if 'scale_factor' in config:
+                    scale_factor_var.set(config['scale_factor'])
+                if 'scale_factor_x' in config:
+                    scale_factor_x_var.set(config['scale_factor_x'])
+                if 'scale_factor_y' in config:
+                    scale_factor_y_var.set(config['scale_factor_y'])
+                if 'bond_length' in config:
+                    bond_length_var.set(config['bond_length'])
+                if 'radius' in config:
+                    radius_var.set(config['radius'])
+                if 'font_size' in config:
+                    font_size_var.set(config['font_size'])
+                if 'text_space' in config:
+                    text_space_var.set(config['text_space'])
+                if 'curve_width' in config:
+                    curve_width_var.set(config['curve_width'])
+                if 'bond_width' in config:
+                    bond_width_var.set(config['bond_width'])
+                if 'shape_type' in config:
+                    shape_type_var.set(config['shape_type'])
+                if 'connect_type' in config:
+                    connect_type_var.set(config['connect_type'])
+                if 'line_type' in config:
+                    line_type_var.set(config['line_type'])
+                if 'target_layout' in config:
+                    target_layout_var.set(config['target_layout'])
+                if 'target_location' in config:
+                    target_location_var.set(config['target_location'])
+                if 'show_marker' in config:
+                    show_marker_var.set(config['show_marker'])
+                if 'grid' in config:
+                    grid_var.set(config['grid'])
+
+                # 加载CDXML风格信息
+                if 'cdxml_header' in config:
+                    loaded_cdxml_header = config['cdxml_header']
+                if 'font_xml' in config:
+                    loaded_font_xml = config['font_xml']
+                if 'font_id' in config:
+                    loaded_font_id = config['font_id']
+                if 'font_name' in config:
+                    loaded_font_name = config['font_name']
+
+                # 加载配置后更新绘图
+                update_plot()
+                messagebox.showinfo("Success", f"Configuration loaded from {file_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load configuration: {str(e)}")
+
     def re_create_table_window():
         global table
         # 检查 table 是否已存在且未关闭
         if table is None or not table.winfo_exists():
-            # 如果没有窗口或者窗口已经被关闭，创建新的窗口
+            # 如果没有窗口或者窗口已经被关闭, 创建新的窗口
             table = create_table_window()
         else:
             print("Table window is already open.")
-    export_button = tk.Button(control_frame, text="Show All", command=show_all)
-    export_button.pack(side=tk.LEFT, padx=5, pady=20)
 
-    export_button = tk.Button(control_frame, text="Export CDXML", command=export_cdxml)
-    export_button.pack(side=tk.RIGHT, padx=20, pady=5)
+    # 创建第一行按钮frame
+    buttons_frame_1 = tk.Frame(control_frame)
+    buttons_frame_1.pack(fill=tk.X, expand=True, pady=2)
 
-    export_button = tk.Button(control_frame, text="Open Table", command=re_create_table_window)
-    export_button.pack(side=tk.LEFT, padx=5, pady=5)
+    export_button = tk.Button(buttons_frame_1, text="Show All", command=show_all)
+    export_button.pack(side=tk.LEFT, padx=5, pady=2)
+
+    export_button = tk.Button(buttons_frame_1, text="Open Table", command=re_create_table_window)
+    export_button.pack(side=tk.LEFT, padx=5, pady=2)
+
+    # 添加保存配置按钮
+    save_config_button = tk.Button(buttons_frame_1, text="Save Config", command=save_config)
+    save_config_button.pack(side=tk.LEFT, padx=5, pady=2)
+
+    # 添加加载配置按钮
+    load_config_button = tk.Button(buttons_frame_1, text="Load Config", command=load_config)
+    load_config_button.pack(side=tk.LEFT, padx=5, pady=2)
+
+    # 创建新的一行用于Export CDXML按钮
+    export_frame = tk.Frame(control_frame)
+    export_frame.pack(fill=tk.X, expand=True, pady=2)
+
+    # 添加读取CDXML风格按钮
+    load_style_button = tk.Button(export_frame, text="Load CDXML Style", command=load_cdxml_style)
+    load_style_button.pack(side=tk.LEFT, padx=5, pady=2)
+
+    export_cdxml_button = tk.Button(export_frame, text="Export CDXML", command=export_cdxml)
+    export_cdxml_button.pack(side=tk.LEFT, padx=5, pady=2)
 
     root.mainloop()
 
