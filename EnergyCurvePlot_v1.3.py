@@ -1809,7 +1809,7 @@ def interactive_bezier_curve():
         def on_color_cell_double_click(event):
             """
             功能:
-                处理颜色列的双击事件, 弹出颜色选择器并更新单元格背景色
+                处理双击事件, 颜色列弹出颜色选择器, 其他列打开编辑器
             参数:
                 event: 鼠标事件对象
             返回:
@@ -1823,42 +1823,28 @@ def interactive_bezier_curve():
             row = selected.row
             col = selected.column
 
-            # 仅处理前3列(颜色列)
-            if col not in [0, 1, 2]:
-                return
+            # 处理前3列(颜色列)
+            if col in [0, 1, 2]:
+                current_value = table.get_cell_data(row, col)
 
-            current_value = table.get_cell_data(row, col)
+                # 弹出颜色选择器
+                default_color = current_value if current_value and current_value.startswith('#') else '#000000'
+                color_code = colorchooser.askcolor(initialcolor=default_color, title="选择颜色")[1]
 
-            # 弹出颜色选择器
-            default_color = current_value if current_value and current_value.startswith('#') else '#000000'
-            color_code = colorchooser.askcolor(initialcolor=default_color, title="选择颜色")[1]
-
-            if color_code:
-                # 更新单元格值(显示十六进制文本)
-                table.set_cell_data(row, col, color_code)
-                # 更新单元格背景颜色和前景文字颜色
-                table.highlight_cells(
-                    row=row,
-                    column=col,
-                    bg=color_code,
-                    fg=get_contrast_color(color_code)
-                )
-                update_plot()
-
-        def validate_cell_edit(event_data):
-            """
-            功能:
-                验证单元格编辑, 对前3列禁用直接编辑, 只允许通过颜色选择器修改
-            参数:
-                event_data: tksheet的编辑事件数据
-            返回:
-                字符串 "edit_cell" 允许编辑
-            """
-            # 前3列不允许直接编辑, 必须通过双击颜色选择器
-            if event_data[1] in [0, 1, 2]:  # event_data[1] 是列索引
-                return None
-            return "edit_cell"
-
+                if color_code:
+                    # 更新单元格值(显示十六进制文本)
+                    table.set_cell_data(row, col, color_code)
+                    # 更新单元格背景颜色和前景文字颜色
+                    table.highlight_cells(
+                        row=row,
+                        column=col,
+                        bg=color_code,
+                        fg=get_contrast_color(color_code)
+                    )
+                    update_plot()
+            else:
+                # 对于其他列, 打开编辑器支持光标编辑
+                table.open_cell()
         # 创建一个独立的表格窗口
         table_window = tk.Toplevel(root)
         table_window.resizable(True, True)
@@ -1890,8 +1876,8 @@ def interactive_bezier_curve():
             "single_select",      # 单击选择
             "drag_select",        # 拖拽选择
             "row_select",         # 行选择
-            "column_select",      # 列选择
-            "edit_cell"           # 单元格编辑
+            "column_select"       # 列选择
+            # 注意: 不使用 "edit_cell" 绑定, 通过双击手动打开编辑器以支持光标编辑
         )
 
         # 设置列宽
@@ -1919,11 +1905,8 @@ def interactive_bezier_curve():
         # 绑定编辑验证
         table.bind("<<SheetModified>>", lambda e: update_plot())
 
-        # 绑定双击事件处理颜色列
+        # 绑定双击事件, 颜色列打开颜色选择器, 其他列打开编辑器
         table.bind("<Double-1>", on_color_cell_double_click)
-
-        # 绑定编辑前验证事件
-        table.bind("<<EditCellEvent>>", validate_cell_edit)
 
         # 将右键菜单绑定到表格
         right_click_menu = RightClickMenu(table)
