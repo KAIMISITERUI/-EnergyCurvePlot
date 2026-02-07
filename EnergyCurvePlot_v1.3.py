@@ -19,6 +19,7 @@ from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 import gc
+from tksheet import Sheet
 
 
 
@@ -800,6 +801,23 @@ energy_texts= []
 combine_texxts = []
 size_markers = []
 
+def get_contrast_color(hex_color):
+    """
+    功能:
+        根据背景颜色计算对比文字颜色(黑或白), 确保文字可见
+    参数:
+        hex_color: 十六进制颜色字符串, 如 '#FF0000'
+    返回:
+        字符串, '#FFFFFF'(白色) 或 '#000000'(黑色)
+    """
+    # 移除#号
+    hex_color = hex_color.lstrip('#')
+    # 转换为RGB
+    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    # 计算亮度
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return '#FFFFFF' if luminance < 0.5 else '#000000'
+
 def interactive_bezier_curve():
     """
     功能:
@@ -990,8 +1008,13 @@ def interactive_bezier_curve():
             key_width =  line_width*3.38
 
             # 从表格获取数据并为每一行创建y列表
-            for row in table.get_children():
-                values = table.item(row)['values']
+            total_rows = table.total_rows()
+            for row in range(total_rows):
+                # 读取当前行的所有数据
+                values = []
+                for col in range(table.total_columns()):
+                    values.append(table.get_cell_data(row, col))
+
                 original_y = []
                 original_x = []
                 target = []
@@ -1628,179 +1651,214 @@ def interactive_bezier_curve():
         canvas.draw()
     
     class RightClickMenu:
-        def __init__(self, table_frame, table):
-            self.table_frame = table_frame
+        """
+        功能:
+            处理表格的右键菜单, 支持添加/删除行和列
+        """
+        def __init__(self, table):
             self.table = table
-            # 绑定右键点击事件
-            self.columns = self.table["columns"]
+            # 禁用tksheet默认右键菜单
+            self.table.disable_bindings("right_click_popup_menu")
+            # 绑定自定义右键菜单
             self.table.bind("<Button-3>", self.show_context_menu)
 
             # 创建上下文菜单
             self.menu = tk.Menu(root, tearoff=0)
-            self.menu.add_command(label="Delete Row", command=self.delete_row)
-            self.menu.add_command(label="Delete Column", command=self.delete_column)
-            self.menu.add_command(label="Add Row (above)", command=self.add_row)
-            self.menu.add_command(label="Add Row (below)", command=self.add_row_below)
-            self.menu.add_command(label="Add Column (left)", command=self.add_column)
-            self.menu.add_command(label="Add Column (right)", command=self.add_column_right)
+            self.menu.add_command(label="删除行", command=self.delete_row)
+            self.menu.add_command(label="删除列", command=self.delete_column)
+            self.menu.add_command(label="在上方添加行", command=self.add_row)
+            self.menu.add_command(label="在下方添加行", command=self.add_row_below)
+            self.menu.add_command(label="在左侧添加列", command=self.add_column)
+            self.menu.add_command(label="在右侧添加列", command=self.add_column_right)
 
-            self.selected_item = None
-            self.selected_column = None
+            self.selected_row = None
+            self.selected_col = None
 
         def show_context_menu(self, event):
-            # 获取点击位置的行和列
-            region = self.table.identify("region", event.x, event.y)
-            if region == "cell":
-                row_id = self.table.identify_row(event.y)
-                column = self.table.identify_column(event.x)
+            """
+            功能:
+                显示右键菜单
+            参数:
+                event: 鼠标事件对象
+            返回:
+                无
+            """
+            # 获取当前选中的单元格
+            selected = self.table.get_currently_selected()
+            if selected:
+                self.selected_row = selected.row
+                self.selected_col = selected.column
 
-                if row_id and column:
-                    col_index = int(column.replace("#", ""))
-                    if col_index >= 4:
-                        self.selected_item = row_id
-                        self.selected_column = column
-                        # 高亮选中的行
-                        self.table.selection_set(row_id)
-                        # 显示上下文菜单
-                        self.menu.post(event.x_root, event.y_root)
+                # 对于数据列(第4列及之后)才显示菜单
+                if self.selected_col >= 3:
+                    self.menu.post(event.x_root, event.y_root)
 
         def delete_row(self):
-            if self.selected_item:
-                self.table.delete(self.selected_item)
-                self.selected_item = None
+            """删除选中的行"""
+            if self.selected_row is not None:
+                self.table.delete_rows([self.selected_row])
+                self.selected_row = None
 
         def delete_column(self):
-            if self.selected_column:
-                existing_columns = list(self.table['columns'])
-                if len(existing_columns) <= 3:
-                    print("Cannot delete: must keep at least 3 columns.")
+            """删除选中的列, 保留至少前3列"""
+            if self.selected_col is not None:
+                total_cols = self.table.total_columns()
+                # 确保至少保留3列(颜色列)
+                if total_cols <= 3:
+                    messagebox.showwarning("警告", "必须保留至少3列")
                     return
-                col_index = int(self.selected_column.replace("#", "")) - 1
-                existing_columns.pop(col_index)
-                self.columns = existing_columns[:3] + [f"E{i-3}" for i in range(4, len(existing_columns) + 1)]
-                self.table['columns'] = tuple(self.columns)
-                default_column_width = 100
-                for i, col in enumerate(self.columns):
-                    self.table.heading(col, text=col)
-                    self.table.column(col, width=default_column_width, anchor='center', stretch=False)
-                for item in self.table.get_children():
-                    values = list(self.table.item(item, 'values'))
-                    if len(values) > 0:
-                        del values[col_index]
-                    self.table.item(item, values=values)
+
+                # 删除列
+                self.table.delete_columns([self.selected_col])
+
+                # 更新表头(重新编号E列)
+                self._update_column_headers()
+                self.selected_col = None
 
         def add_row(self):
-            if self.selected_item:
-                index = self.table.index(self.selected_item)
-                num_columns = len(self.table['columns'])
-                new_row_values = ('#000000', '#000000', '#000000') + ('',) * (num_columns - 3)
-                self.table.insert('', index, values=new_row_values)
+            """在选中行上方添加新行"""
+            if self.selected_row is not None:
+                num_cols = self.table.total_columns()
+                new_values = ['#000000', '#000000', '#000000'] + [''] * (num_cols - 3)
+                self.table.insert_row(row=new_values, idx=self.selected_row)
+
+                # 设置新行前3列的背景颜色
+                for col_idx in range(3):
+                    self.table.highlight_cells(
+                        row=self.selected_row,
+                        column=col_idx,
+                        bg='#000000',
+                        fg='#FFFFFF'
+                    )
+
+                # 取消新添加行的选中状态
+                self.table.deselect("all")
 
         def add_row_below(self):
-            if self.selected_item:
-                index = self.table.index(self.selected_item)
-                num_columns = len(self.table['columns'])
-                new_row_values = ('#000000', '#000000', '#000000') + ('',) * (num_columns - 3)
-                self.table.insert('', index + 1, values=new_row_values)
+            """在选中行下方添加新行"""
+            if self.selected_row is not None:
+                num_cols = self.table.total_columns()
+                new_values = ['#000000', '#000000', '#000000'] + [''] * (num_cols - 3)
+                self.table.insert_row(row=new_values, idx=self.selected_row + 1)
+
+                # 设置新行前3列的背景颜色
+                for col_idx in range(3):
+                    self.table.highlight_cells(
+                        row=self.selected_row + 1,
+                        column=col_idx,
+                        bg='#000000',
+                        fg='#FFFFFF'
+                    )
+
+                # 取消新添加行的选中状态
+                self.table.deselect("all")
 
         def add_column(self):
-            existing_columns = list(self.table['columns'])
-            new_column = f'E{len(existing_columns) - 3}'
-            if self.selected_column:
-                col_index = int(self.selected_column.replace("#", "")) - 1
-                existing_columns.insert(col_index, new_column)
-                self.columns = existing_columns[:3] + [f"E{i-3}" for i in range(4, len(existing_columns) + 1)]
-                self.table['columns'] = tuple(self.columns)
-                default_column_width = 100
-                for col in self.columns:
-                    self.table.heading(col, text=col)
-                    self.table.column(col, width=default_column_width, anchor='center', stretch=False)
-                for item in self.table.get_children():
-                    values = list(self.table.item(item, 'values'))
-                    values.insert(col_index, '')
-                    self.table.item(item, values=values)
+            """在选中列左侧添加新列"""
+            if self.selected_col is not None and self.selected_col >= 3:
+                self._insert_column(self.selected_col)
 
         def add_column_right(self):
-            existing_columns = list(self.table['columns'])
-            new_column = f'E{len(existing_columns) - 3}'
-            if self.selected_column:
-                col_index = int(self.selected_column.replace("#", "")) - 1
-                existing_columns.insert(col_index + 1, new_column)
-                self.columns = existing_columns[:3] + [f"E{i-3}" for i in range(4, len(existing_columns) + 1)]
-                self.table['columns'] = tuple(self.columns)
-                default_column_width = 100
-                for col in self.columns:
-                    self.table.heading(col, text=col)
-                    self.table.column(col, width=default_column_width, anchor='center', stretch=False)
-                for item in self.table.get_children():
-                    values = list(self.table.item(item, 'values'))
-                    values.insert(col_index + 1, '')
-                    self.table.item(item, values=values)
+            """在选中列右侧添加新列"""
+            if self.selected_col is not None and self.selected_col >= 3:
+                self._insert_column(self.selected_col + 1)
+
+        def _insert_column(self, col_idx):
+            """
+            功能:
+                在指定位置插入新列
+            参数:
+                col_idx: 列索引
+            返回:
+                无
+            """
+            # 插入空列
+            self.table.insert_column(idx=col_idx, width=100)
+
+            # 为所有行在新列填充空值
+            total_rows = self.table.total_rows()
+            for row_idx in range(total_rows):
+                self.table.set_cell_data(row_idx, col_idx, '')
+
+            # 更新表头
+            self._update_column_headers()
+
+        def _update_column_headers(self):
+            """
+            功能:
+                更新表头, 重新编号能量列(E1, E2, E3...)
+            参数:
+                无
+            返回:
+                无
+            """
+            total_cols = self.table.total_columns()
+            new_headers = ['Curve Color', 'Marker Color', 'Text Color'] + \
+                         [f'E{i+1}' for i in range(total_cols - 3)]
+            self.table.headers(new_headers)
 
     # 绑定放大和缩小事件处理函数到 Matplotlib 图表上
     fig.canvas.mpl_connect('scroll_event', on_zoom)
 
     def create_table_window():
 
-        def on_double_click(event):
-            # 获取点击区域
-            region = table.identify("region", event.x, event.y)
-            if region == "cell":
-                # 获取点击的行和列
-                row_id = table.identify_row(event.y)
-                column = table.identify_column(event.x)
-                if row_id and column:
-                    column_index = int(column[1:]) - 1
+        def on_color_cell_double_click(event):
+            """
+            功能:
+                处理颜色列的双击事件, 弹出颜色选择器并更新单元格背景色
+            参数:
+                event: 鼠标事件对象
+            返回:
+                无
+            """
+            # 获取点击的单元格
+            selected = table.get_currently_selected()
+            if not selected:
+                return
 
-                    # 获取当前值
-                    item = table.item(row_id)
-                    current_value = item['values'][column_index]
+            row = selected.row
+            col = selected.column
 
+            # 仅处理前3列(颜色列)
+            if col not in [0, 1, 2]:
+                return
 
-                    # 获取单元格的坐标
-                    x, y, width, height = table.bbox(row_id, column)
+            current_value = table.get_cell_data(row, col)
 
-                    if column_index in [0, 1, 2]:  # 前三列使用颜色选择
-                        # 使用颜色选择对话框
-                        if current_value.startswith('#'):
-                            default_color = current_value
-                        else:
-                            default_color = "#000000" 
-                        color_code = colorchooser.askcolor(initialcolor=default_color, title="Select Color")[1]
-                        if color_code:
-                            # 更新 Treeview 中的值
-                            table.set(row_id, column=columns[column_index], value=color_code)
-                            update_plot()
+            # 弹出颜色选择器
+            default_color = current_value if current_value and current_value.startswith('#') else '#000000'
+            color_code = colorchooser.askcolor(initialcolor=default_color, title="选择颜色")[1]
 
-                    else:  # 其他列使用文本输入框编辑
-                        # 创建 Entry 控件
-                        edit_entry = tk.Entry(table_frame)
-                        edit_entry.place(x=x, y=y, width=width, height=height)
-                        edit_entry.insert(0, current_value)
-                        edit_entry.focus()
+            if color_code:
+                # 更新单元格值(显示十六进制文本)
+                table.set_cell_data(row, col, color_code)
+                # 更新单元格背景颜色和前景文字颜色
+                table.highlight_cells(
+                    row=row,
+                    column=col,
+                    bg=color_code,
+                    fg=get_contrast_color(color_code)
+                )
+                update_plot()
 
-                        # 处理失去焦点事件以保存更改
-                        def on_focus_out(event):
-                            new_value = edit_entry.get()
-                            values = list(table.item(row_id, 'values'))
-                            values[column_index] = new_value
-                            table.item(row_id, values=values)
-                            # 销毁 Entry 控件
-                            edit_entry.destroy()
-
-                            if column_index > 2:
-                                if current_value == '' or current_value == '0.0':
-                                    show_all()
-
-                        # 绑定失去焦点事件，自动保存编辑内容并销毁 Entry
-                        edit_entry.bind('<FocusOut>', on_focus_out)
+        def validate_cell_edit(event_data):
+            """
+            功能:
+                验证单元格编辑, 对前3列禁用直接编辑, 只允许通过颜色选择器修改
+            参数:
+                event_data: tksheet的编辑事件数据
+            返回:
+                字符串 "edit_cell" 允许编辑
+            """
+            # 前3列不允许直接编辑, 必须通过双击颜色选择器
+            if event_data[1] in [0, 1, 2]:  # event_data[1] 是列索引
+                return None
+            return "edit_cell"
 
         # 创建一个独立的表格窗口
         table_window = tk.Toplevel(root)
         table_window.resizable(True, True)
         table_window.title("Energy Data Table")
-        table_frame = tk.Frame(table_window)
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         table_window.geometry("650x200")  # 设置初始窗口大小
 
@@ -1808,105 +1866,158 @@ def interactive_bezier_curve():
         table_frame = tk.Frame(table_window, width=600, height=200)
         table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # 定义表格列, 包括颜色选择列
-        columns = ('Curve Color', 'Marker Color', 'Text Color') + tuple(f'E{i+1}' for i in range(3))
-        table = ttk.Treeview(table_frame, columns=columns, show='headings', height=5)
-        table.insert('', 'end', values=('#000000','#000000','#000000', 0.0, 0.0, 0.0))
+        # 创建tksheet表格
+        table = Sheet(
+            table_frame,
+            headers=['Curve Color', 'Marker Color', 'Text Color', 'E1', 'E2', 'E3'],
+            height=200,
+            width=650,
+            show_row_index=True,  # 显示行号
+            show_header=True,     # 显示表头
+            show_top_left=True,   # 显示左上角空白区域
+            empty_horizontal=0,   # 不显示额外的水平空白列
+            empty_vertical=0      # 不显示额外的垂直空白行
+        )
 
-        # 创建水平滚动条
-        scrollbar_x = ttk.Scrollbar(table_frame, orient='horizontal', command=table.xview)
-        scrollbar_y = ttk.Scrollbar(table_frame, orient='vertical', command=table.yview)
-        table.configure(xscrollcommand=scrollbar_x.set, yscrollcommand=scrollbar_y.set)
+        # 启用基础绑定
+        table.enable_bindings(
+            "single_select",      # 单击选择
+            "drag_select",        # 拖拽选择
+            "row_select",         # 行选择
+            "column_select",      # 列选择
+            "edit_cell"           # 单元格编辑
+        )
 
-        # 放置滚动条和表格
-        scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
-        scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        # 设置列宽
+        for col_idx in range(6):  # 初始6列
+            table.column_width(column=col_idx, width=100)
+
+        # 设置表格所有显示内容居中对齐（数据区、表头、行号）
+        table.table_align(align="center")
+        table.header_align(align="center")
+        table.row_index_align(align="center")
+
         table.pack(fill=tk.BOTH, expand=True)
 
+        # 初始化一行数据
+        table.insert_row(row=['#000000', '#000000', '#000000', 0.0, 0.0, 0.0], idx=0)
+
+        # 设置前3列的背景颜色为其颜色值
+        for col_idx in range(3):
+            color_value = table.get_cell_data(0, col_idx)
+            table.highlight_cells(row=0, column=col_idx, bg=color_value, fg='#FFFFFF')
+
+        # 取消初始行的选中状态
+        table.deselect("all")
+
+        # 绑定编辑验证
+        table.bind("<<SheetModified>>", lambda e: update_plot())
+
+        # 绑定双击事件处理颜色列
+        table.bind("<Double-1>", on_color_cell_double_click)
+
+        # 绑定编辑前验证事件
+        table.bind("<<EditCellEvent>>", validate_cell_edit)
+
         # 将右键菜单绑定到表格
-        right_click_menu = RightClickMenu(table_frame, table)
-
-
-        for col in table['columns']:
-            table.heading(col, text=col)
-            table.column(col, width=100, anchor='center')
-
-        # 绑定双击事件, 将相应的编辑控件显示出来
-        table.bind("<Double-1>", on_double_click)
-
-        # 添加事件监听器以在表格数据更改时自动更新绘图
-        table.bind("<ButtonRelease-1>", update_plot)
+        right_click_menu = RightClickMenu(table)
 
             # 添加新列的函数
         def add_column():
-            # 获取当前所有的列
-            existing_columns = list(table['columns'])
+            """
+            功能:
+                在表格末尾添加新列
+            参数:
+                无
+            返回:
+                无
+            """
+            # 获取当前列数
+            current_cols = table.total_columns()
 
-            # 创建新列
-            new_column = f'E{len(existing_columns) - 2}'
-            existing_columns.append(new_column)
-            table['columns'] = tuple(existing_columns)  # 更新 Treeview 的列配置
+            # 在末尾插入新列
+            table.insert_column(idx=current_cols, width=100)
 
-            # 为所有列设置相同的默认宽度
-            default_column_width = 100
+            # 为所有行在新列填充空值
+            total_rows = table.total_rows()
+            for row_idx in range(total_rows):
+                table.set_cell_data(row_idx, current_cols, '')
 
-            # 重新设置所有列的标题和样式
-            for col in existing_columns:
-                # 设置所有列为默认宽度，禁用自动拉伸
-                table.heading(col, text=col)
-                table.column(col, width=default_column_width, anchor='center', stretch=False)
-
-            # 更新每一行的数据，添加新列的默认值
-            for row in table.get_children():
-                current_values = list(table.item(row)['values'])
-                current_values.append('')
-                table.item(row, values=current_values)
+            # 更新表头
+            new_header = f'E{current_cols - 2}'
+            current_headers = list(table.headers())
+            current_headers.append(new_header)
+            table.headers(current_headers)
 
         def add_row():
-            # 获取当前表格的列数
-            num_columns = len(table['columns'])
+            """
+            功能:
+                在表格末尾添加新行
+            参数:
+                无
+            返回:
+                无
+            """
+            num_columns = table.total_columns()
+            new_row_values = ['#000000', '#000000', '#000000'] + [''] * (num_columns - 3)
 
-            # 根据列数添加新行，初始值设为 0.0
-            new_row_values = ('#000000', '#000000', '#000000') + ('',) * (num_columns - 3)
+            # 在末尾插入新行
+            new_row_idx = table.total_rows()
+            table.insert_row(row=new_row_values, idx=new_row_idx)
 
-            # 插入新行到表格的末尾
-            table.insert('', 'end', values=new_row_values)
+            # 设置前3列的背景颜色
+            for col_idx in range(3):
+                table.highlight_cells(
+                    row=new_row_idx,
+                    column=col_idx,
+                    bg='#000000',
+                    fg='#FFFFFF'
+                )
+
+            # 取消新添加行的选中状态
+            table.deselect("all")
 
         def delete_column():
-            # 获取当前所有的列
-            existing_columns = list(table['columns'])
+            """
+            功能:
+                删除表格的最后一列
+            参数:
+                无
+            返回:
+                无
+            """
+            total_cols = table.total_columns()
 
             # 确保至少保留3列
-            if len(existing_columns) <= 3:
-                print("Cannot delete: must keep at least 3 columns.")
+            if total_cols <= 3:
+                print("无法删除: 必须至少保留3列")
                 return
 
-            # 删除最后一个列
-            column_to_delete = existing_columns.pop()  # 获取要删除的列名
-            table['columns'] = tuple(existing_columns)  # 更新 Treeview 的列配置
+            # 删除最后一列
+            table.delete_columns([total_cols - 1])
 
-            # 为所有剩余列重新设置标题和样式
-            default_column_width = 100
-            for col in existing_columns:
-                # 设置每列为默认宽度，禁用自动拉伸
-                table.heading(col, text=col)
-                table.column(col, width=default_column_width, anchor='center', stretch=False)
-
-            # 更新每一行的数据，删除对应的列的值
-            for row in table.get_children():
-                current_values = list(table.item(row)['values'])
-                if len(current_values) > 0:
-                    current_values.pop()  # 删除最后一列的值
-                table.item(row, values=current_values)
+            # 更新表头
+            new_headers = ['Curve Color', 'Marker Color', 'Text Color'] + \
+                         [f'E{i+1}' for i in range(total_cols - 4)]
+            table.headers(new_headers)
 
         def delete_row():
-            # 检查表格中是否有行
-            if len(table.get_children()) > 0:
-                # 获取所有行并删除最后一行
-                last_item = table.get_children()[-1]
-                table.delete(last_item)
+            """
+            功能:
+                删除表格的最后一行
+            参数:
+                无
+            返回:
+                无
+            """
+            total_rows = table.total_rows()
+
+            # 检查是否有行可以删除
+            if total_rows > 0:
+                # 删除最后一行
+                table.delete_rows([total_rows - 1])
             else:
-                print("No rows to delete in the table.")
+                print("表格为空, 无法删除行")
 
         # 用于跟踪当前打开的文件路径
         current_file_path = [None]  # 使用列表以便在嵌套函数中修改
@@ -1923,29 +2034,35 @@ def interactive_bezier_curve():
             """
             # 收集表格数据
             data = []
-            for row in table.get_children():
-                row_data = table.item(row)['values']
+            total_rows = table.total_rows()
+            total_cols = table.total_columns()
+
+            for row in range(total_rows):
+                row_data = []
+                for col in range(total_cols):
+                    cell_value = table.get_cell_data(row, col)
+                    row_data.append(cell_value)
                 data.append(row_data)
 
             if not data:
-                messagebox.showwarning("Warning", "Table is empty, no data to save")
+                messagebox.showwarning("警告", "表格为空, 没有数据可保存")
                 return
 
             # 如果有当前打开的文件, 提示是否保存到该文件或另存为
             if current_file_path[0]:
                 response = messagebox.askyesnocancel(
-                    "Save Data",
-                    f"Overwrite file {current_file_path[0]}?"
+                    "保存数据",
+                    f"覆盖文件 {current_file_path[0]}?"
                 )
 
                 if response is None:  # User clicked cancel
-                    print("Save operation cancelled")
+                    print("保存操作已取消")
                     return
                 elif response:  # User clicked yes, save to current file
                     file_path = current_file_path[0]
                 else:  # User clicked no, save as
                     file_path = filedialog.asksaveasfilename(
-                        title="Save As",
+                        title="另存为",
                         defaultextension=".json",
                         filetypes=[
                             ("JSON files", "*.json"),
@@ -1956,12 +2073,12 @@ def interactive_bezier_curve():
                         initialfile=os.path.basename(current_file_path[0])
                     )
                     if not file_path:
-                        print("Save operation cancelled")
+                        print("保存操作已取消")
                         return
             else:
                 # 没有当前文件, 显示保存对话框
                 file_path = filedialog.asksaveasfilename(
-                    title="Save Data",
+                    title="保存数据",
                     defaultextension=".json",
                     filetypes=[
                         ("JSON files", "*.json"),
@@ -1973,7 +2090,7 @@ def interactive_bezier_curve():
                 )
 
                 if not file_path:
-                    print("Save operation cancelled")
+                    print("保存操作已取消")
                     return
 
             # 根据文件扩展名选择保存方法
@@ -1987,8 +2104,8 @@ def interactive_bezier_curve():
 
                 elif file_ext == '.xlsx':
                     # 保存为Excel格式
-                    columns = list(table['columns'])
-                    df = pd.DataFrame(data, columns=columns)
+                    headers = list(table.headers())
+                    df = pd.DataFrame(data, columns=headers)
 
                     # 检查文件是否已存在
                     file_exists = os.path.exists(file_path)
@@ -2038,8 +2155,8 @@ def interactive_bezier_curve():
 
                 elif file_ext == '.csv':
                     # 保存为CSV格式
-                    columns = list(table['columns'])
-                    df = pd.DataFrame(data, columns=columns)
+                    headers = list(table.headers())
+                    df = pd.DataFrame(data, columns=headers)
                     df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
                 else:
@@ -2049,12 +2166,12 @@ def interactive_bezier_curve():
 
                 # 更新当前文件路径
                 current_file_path[0] = file_path
-                print(f"Table data saved to: {file_path}")
-                messagebox.showinfo("Success", f"Data saved to:\n{file_path}")
+                print(f"表格数据已保存到: {file_path}")
+                messagebox.showinfo("成功", f"数据已保存到:\n{file_path}")
 
             except Exception as e:
-                print(f"Save failed: {str(e)}")
-                messagebox.showerror("Error", f"Save failed:\n{str(e)}")
+                print(f"保存失败: {str(e)}")
+                messagebox.showerror("错误", f"保存失败:\n{str(e)}")
 
         # Function to load the table data
         def load_table_data():
@@ -2068,7 +2185,7 @@ def interactive_bezier_curve():
             """
             # Show file selection dialog
             file_path = filedialog.askopenfilename(
-                title="Load Data",
+                title="加载数据",
                 filetypes=[
                     ("All supported files", "*.json;*.xlsx;*.csv"),
                     ("JSON files", "*.json"),
@@ -2079,7 +2196,7 @@ def interactive_bezier_curve():
             )
 
             if not file_path:
-                print("Load operation cancelled")
+                print("加载操作已取消")
                 return
 
             try:
@@ -2109,42 +2226,60 @@ def interactive_bezier_curve():
                     data = df.values.tolist()
 
                 else:
-                    messagebox.showerror("Error", f"Unsupported file format: {file_ext}")
+                    messagebox.showerror("错误", f"不支持的文件格式: {file_ext}")
                     return
 
                 if not data:
-                    messagebox.showwarning("Warning", "No data in file")
+                    messagebox.showwarning("警告", "文件中没有数据")
                     return
 
                 # 清除当前表格
-                for row in table.get_children():
-                    table.delete(row)
+                table.set_sheet_data([[]])  # 清空数据
 
-                # 根据数据动态设置列
-                if data:
-                    # 第一行定义列数
-                    columns = ('Curve Color', 'Marker Color', 'Text Color') + tuple(f'E{i+1}' for i in range(len(data[0])-3))
-                    table['columns'] = columns
+                # 更新列数
+                if len(data) > 0:
+                    num_cols = len(data[0])
+                    # 更新表头
+                    headers = ['Curve Color', 'Marker Color', 'Text Color'] + [f'E{i+1}' for i in range(num_cols - 3)]
+                    table.headers(headers)
 
-                    # 更新列标题
-                    for col in table['columns']:
-                        table.heading(col, text=col)
-                        table.column(col, width=100, anchor='center', stretch=False)
+                    # 设置列宽
+                    for col_idx in range(num_cols):
+                        table.column_width(column=col_idx, width=100)
 
-                # 将加载的数据插入表格
-                for row_data in data:
-                    table.insert('', 'end', values=row_data)
+                # 插入数据
+                table.set_sheet_data(data)
+
+                # 设置表格所有显示内容居中对齐（数据区、表头、行号）
+                table.table_align(align="center")
+                table.header_align(align="center")
+                table.row_index_align(align="center")
+
+                # 更新前3列的背景颜色
+                for row in range(len(data)):
+                    for col in range(min(3, len(data[row]))):
+                        color_value = table.get_cell_data(row, col)
+                        if color_value and isinstance(color_value, str) and color_value.startswith('#'):
+                            table.highlight_cells(
+                                row=row,
+                                column=col,
+                                bg=color_value,
+                                fg=get_contrast_color(color_value)
+                            )
+
+                # 取消所有选中状态, 避免加载后所有内容都是蓝色选中状态
+                table.deselect("all")
 
                 show_all()
 
                 # 更新当前文件路径
                 current_file_path[0] = file_path
-                print(f"Table data loaded from: {file_path}")
-                messagebox.showinfo("Success", f"Data loaded from:\n{file_path}")
+                print(f"表格数据已从以下位置加载: {file_path}")
+                messagebox.showinfo("成功", f"数据已从以下位置加载:\n{file_path}")
 
             except Exception as e:
-                print(f"Load failed: {str(e)}")
-                messagebox.showerror("Error", f"Load failed:\n{str(e)}")
+                print(f"加载失败: {str(e)}")
+                messagebox.showerror("错误", f"加载失败:\n{str(e)}")
         
         add_row_button = tk.Button(table_frame, text="Add Row", command=add_row)
         add_column_button = tk.Button(table_frame, text="Add Column", command=add_column)
@@ -2161,11 +2296,12 @@ def interactive_bezier_curve():
         delete_column_button.pack(side=tk.LEFT, padx=5, pady=5)
         save_button.pack(side=tk.LEFT, padx=5, pady=5)
         load_button.pack(side=tk.LEFT, padx=5, pady=5)
-        return table
 
-    global table
+        return table_window, table
 
-    table = create_table_window()
+    global table, table_window
+
+    table_window, table = create_table_window()
     # 存储所有动态创建的滑条
     slider_frames = {}
 
@@ -2793,13 +2929,22 @@ def interactive_bezier_curve():
                 messagebox.showerror("Error", f"Failed to load configuration: {str(e)}")
 
     def re_create_table_window():
-        global table
-        # 检查 table 是否已存在且未关闭
-        if table is None or not table.winfo_exists():
+        """
+        功能:
+            重新创建或显示表格窗口
+        参数:
+            无
+        返回:
+            无
+        """
+        global table, table_window
+
+        # 检查表格窗口是否存在并且可见
+        if table_window is None or not table_window.winfo_exists():
             # 如果没有窗口或者窗口已经被关闭, 创建新的窗口
-            table = create_table_window()
+            table_window, table = create_table_window()
         else:
-            print("Table window is already open.")
+            print("表格窗口已经打开")
 
     # 创建第一行按钮frame
     buttons_frame_1 = tk.Frame(control_frame)
