@@ -15,6 +15,10 @@ import os
 import math
 from tkinter import simpledialog, filedialog
 import pandas as pd
+from io import BytesIO
+from openpyxl import load_workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
+import gc
 
 
 
@@ -26,8 +30,6 @@ import pandas as pd
 3. 保存cdxml文件现在可以选择保存位置.
 4. 增加了读取chemdraw文件风格的功能,现在可以使用“Load CDXML Style'选择自己常用风格的chemdraw文件,读取后续保存的也会是同样的风格。同时保存配置的时候也会被存储到配置信息里.
 5. 增加了显示数字和显示文字的选项
-
-注意: 所有版本保存的 table_data.json 都是通用的, 可以被任何版本读取.
 
 1.2 版本更新日志
 
@@ -942,7 +944,6 @@ def interactive_bezier_curve():
                 available_fonts = [f.name for f in fm.fontManager.ttflist]
                 if loaded_font_name in available_fonts:
                     current_font_name = loaded_font_name
-                    print(f"使用字体: {current_font_name}")
                 else:
                     current_font_name = 'Arial'
                     print(f"警告: 字体 '{loaded_font_name}' 在系统中未找到, 使用默认字体 Arial")
@@ -1199,10 +1200,6 @@ def interactive_bezier_curve():
     def print_text(font_size, text_space, original_y, target, location, text_color, fontsize, text_shape_space,text_shape_space_y, idx, y, center_x,target_layout,target_location, font_name='Arial'):
         show_numbers = show_numbers_var.get()
         show_targets = show_targets_var.get()
-
-        # 调试: 打印使用的字体名称(仅第一次)
-        if idx == 0:
-            print(f"绘图使用字体: {font_name}")
 
         if location[idx].lower() == 'sc':
             if show_numbers:
@@ -1534,7 +1531,7 @@ def interactive_bezier_curve():
         
     # 创建主窗口
     root = tk.Tk()
-    root.title("Interactive Bezier Curve Adjustments")
+    root.title("EnergyCurvePlot v1.3")
     style = ttk.Style(root)
     style.theme_use("vista")  # 使用'vista'主题
     main_frame = tk.Frame(root)
@@ -1992,7 +1989,52 @@ def interactive_bezier_curve():
                     # 保存为Excel格式
                     columns = list(table['columns'])
                     df = pd.DataFrame(data, columns=columns)
-                    df.to_excel(file_path, index=False, engine='openpyxl')
+
+                    # 检查文件是否已存在
+                    file_exists = os.path.exists(file_path)
+
+                    if file_exists:
+                        # 文件已存在, 读入内存操作避免锁定磁盘文件
+                        with open(file_path, 'rb') as f:
+                            file_data = BytesIO(f.read())
+
+                        wb = load_workbook(file_data)
+                        ws = wb.active
+
+                        # 清除现有数据(保留格式)
+                        for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+                            for cell in row:
+                                cell.value = None
+
+                        # 写入新数据
+                        for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), 1):
+                            for c_idx, value in enumerate(row, 1):
+                                ws.cell(row=r_idx, column=c_idx, value=value)
+
+                        # 保存到内存再写回磁盘
+                        output = BytesIO()
+                        wb.save(output)
+                        wb.close()
+                        del wb
+                        gc.collect()
+
+                        with open(file_path, 'wb') as f:
+                            f.write(output.getvalue())
+                    else:
+                        # 文件不存在, 在内存中创建后写入磁盘
+                        output = BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            df.to_excel(writer, index=False, sheet_name='Sheet1')
+
+                            # 设置列宽
+                            ws = writer.sheets['Sheet1']
+                            for column in ws.columns:
+                                max_length = 18
+                                column_letter = column[0].column_letter
+                                ws.column_dimensions[column_letter].width = max_length
+
+                        with open(file_path, 'wb') as f:
+                            f.write(output.getvalue())
 
                 elif file_ext == '.csv':
                     # 保存为CSV格式
@@ -2051,8 +2093,10 @@ def interactive_bezier_curve():
                         data = json.load(file)
 
                 elif file_ext == '.xlsx':
-                    # 从Excel文件加载
-                    df = pd.read_excel(file_path, engine='openpyxl')
+                    # 从Excel文件加载, 读入内存避免锁定磁盘文件
+                    with open(file_path, 'rb') as f:
+                        file_data = BytesIO(f.read())
+                    df = pd.read_excel(file_data, engine='openpyxl')
                     # 将NaN值替换为空字符串
                     df = df.fillna('')
                     data = df.values.tolist()
