@@ -1860,18 +1860,20 @@ def interactive_bezier_curve():
         table_window.resizable(True, True)
         table_window.title("Energy Data Table")
 
-        table_window.geometry("650x200")  # 设置初始窗口大小
+        table_window.geometry("700x280")  # 更紧凑的初始大小，同时保证底部按钮可见
 
         # 创建表格的容器框架
-        table_frame = tk.Frame(table_window, width=600, height=200)
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        table_frame = tk.Frame(table_window, width=680, height=200)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
+        buttons_frame = tk.Frame(table_window)
+        buttons_frame.pack(fill=tk.X, padx=5, pady=5)
 
         # 创建tksheet表格
         table = Sheet(
             table_frame,
             headers=['Curve Color', 'Marker Color', 'Text Color', 'E1', 'E2', 'E3'],
             height=200,
-            width=650,
+            width=680,
             show_row_index=True,  # 显示行号
             show_header=True,     # 显示表头
             show_top_left=True,   # 显示左上角空白区域
