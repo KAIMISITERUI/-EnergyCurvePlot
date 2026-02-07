@@ -1015,6 +1015,10 @@ def interactive_bezier_curve():
                 for col in range(table.total_columns()):
                     values.append(table.get_cell_data(row, col))
 
+                # 跳过结构不完整的临时行，避免索引越界
+                if len(values) < 3:
+                    continue
+
                 original_y = []
                 original_x = []
                 target = []
@@ -2235,22 +2239,31 @@ def interactive_bezier_curve():
                     messagebox.showwarning("警告", "文件中没有数据")
                     return
 
-                # 清除当前表格
-                table.set_sheet_data([[]])  # 清空数据
+                # 规范化数据结构，确保列数一致且至少包含前三列颜色列
+                normalized_data = []
+                max_cols = 0
+                for row_data in data:
+                    if isinstance(row_data, (list, tuple)):
+                        row_values = list(row_data)
+                    else:
+                        row_values = [row_data]
+                    normalized_data.append(row_values)
+                    max_cols = max(max_cols, len(row_values))
 
-                # 更新列数
-                if len(data) > 0:
-                    num_cols = len(data[0])
-                    # 更新表头
-                    headers = ['Curve Color', 'Marker Color', 'Text Color'] + [f'E{i+1}' for i in range(num_cols - 3)]
-                    table.headers(headers)
+                num_cols = max(3, max_cols)
+                for row_values in normalized_data:
+                    if len(row_values) < num_cols:
+                        row_values.extend([''] * (num_cols - len(row_values)))
+                    for color_col in range(3):
+                        if row_values[color_col] in ('', None):
+                            row_values[color_col] = '#000000'
 
-                    # 设置列宽
-                    for col_idx in range(num_cols):
-                        table.column_width(column=col_idx, width=100)
-
-                # 插入数据
-                table.set_sheet_data(data)
+                # 先设置完整数据，再更新表头和列宽，避免列扩展过程中的越界
+                table.set_sheet_data(normalized_data)
+                headers = ['Curve Color', 'Marker Color', 'Text Color'] + [f'E{i+1}' for i in range(num_cols - 3)]
+                table.headers(headers)
+                for col_idx in range(num_cols):
+                    table.column_width(column=col_idx, width=100)
 
                 # 设置表格所有显示内容居中对齐（数据区、表头、行号）
                 table.table_align(align="center")
@@ -2258,8 +2271,8 @@ def interactive_bezier_curve():
                 table.row_index_align(align="center")
 
                 # 更新前3列的背景颜色
-                for row in range(len(data)):
-                    for col in range(min(3, len(data[row]))):
+                for row in range(len(normalized_data)):
+                    for col in range(3):
                         color_value = table.get_cell_data(row, col)
                         if color_value and isinstance(color_value, str) and color_value.startswith('#'):
                             table.highlight_cells(
