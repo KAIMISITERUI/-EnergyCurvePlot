@@ -2591,8 +2591,18 @@ def interactive_bezier_curve():
             page_width = 1
             y_limit = 300
 
-            for row in table.get_children():
-                values = table.item(row)['values']
+            # 从表格读取数据(使用tksheet的正确方法)
+            total_rows = table.total_rows()
+
+            for row in range(total_rows):
+                values = []
+                for col in range(table.total_columns()):
+                    values.append(table.get_cell_data(row, col))
+
+                # 跳过结构不完整的临时行
+                if len(values) < 3:
+                    continue
+
                 for i in values[:3]: # 颜色目标
                     color_list.append(i)
 
@@ -2601,8 +2611,15 @@ def interactive_bezier_curve():
 
             # 设置y限制
             total_y= []
-            for row in table.get_children():
-                values = table.item(row)['values']
+            for row in range(total_rows):
+                values = []
+                for col in range(table.total_columns()):
+                    values.append(table.get_cell_data(row, col))
+
+                # 跳过结构不完整的临时行
+                if len(values) < 3:
+                    continue
+
                 for index, value in enumerate(values[3:]):
                     value = str(value)
                     if value.strip():  # 如果值不为空
@@ -2621,8 +2638,15 @@ def interactive_bezier_curve():
                     y_limit = i+100
 
             # 生成曲线和目标数据
-            for row in table.get_children():
-                values = table.item(row)['values']
+            for row in range(total_rows):
+                values = []
+                for col in range(table.total_columns()):
+                    values.append(table.get_cell_data(row, col))
+
+                # 跳过结构不完整的临时行
+                if len(values) < 3:
+                    continue
+
                 original_y = []
                 target = []
                 location = []
@@ -2682,7 +2706,7 @@ def interactive_bezier_curve():
 
                 text_base_movement = round(font_size*0.3241+0.1236,2)
 
-                
+
                 if shape_type ==  "line":
                     if width_factor == 0:
                         curves_xml = draw_line(scaled_x_adjusted,scaled_y_points,line_type,curve_width,bond_length,curve_color_index,connect_type,original_x)
@@ -2723,12 +2747,12 @@ def interactive_bezier_curve():
                 WidthPages="{page_width}"
                 >'''
 
-            connect_xml  += "".join(color_xml)  # 添加颜色
+            connect_xml  += color_xml  # 添加颜色
             # 使用读取的font_xml, 如果没有读取则使用默认值
             current_font_xml = loaded_font_xml if loaded_font_xml is not None else font_xml
-            connect_xml  += "".join(current_font_xml)  # 添加字体
-            connect_xml  += "".join(page_xml) # 添加页面
-            connect_xml  += "".join(graph_xml) # 添加图形
+            connect_xml  += current_font_xml  # 添加字体
+            connect_xml  += page_xml  # 添加页面
+            connect_xml  += graph_xml  # 添加图形
 
             # 将所有部分组合成单个CDXML字符串
             # 使用读取的cdxml_header, 如果没有读取则使用默认值
