@@ -12,6 +12,7 @@ import tkinter.colorchooser as colorchooser
 import json
 from tkinter import messagebox
 import os
+import ctypes
 import math
 from tkinter import simpledialog, filedialog
 import pandas as pd
@@ -20,6 +21,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 import gc
 from tksheet import Sheet
+from PIL import ImageGrab
 
 
 
@@ -818,6 +820,40 @@ def get_contrast_color(hex_color):
     luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
     return '#FFFFFF' if luminance < 0.5 else '#000000'
 
+def enable_windows_dpi_awareness():
+    """
+    功能:
+        在Windows上启用DPI感知, 避免Tk坐标与截图像素坐标不一致
+    参数:
+        无
+    返回:
+        无
+    """
+    if os.name != 'nt':
+        return
+
+    # 优先启用 Per-Monitor V2, 兼容高DPI和多显示器
+    try:
+        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(
+            ctypes.c_void_p(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+        )
+        return
+    except Exception:
+        pass
+
+    # 兼容较老Windows版本
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        return
+    except Exception:
+        pass
+
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
 def interactive_bezier_curve():
     """
     功能:
@@ -827,11 +863,22 @@ def interactive_bezier_curve():
     返回:
         无
     """
+    # 在创建Tk窗口前启用DPI感知, 修复取色偏移
+    enable_windows_dpi_awareness()
+
     # 用于存储从CDXML文件读取的风格信息
     loaded_cdxml_header = None
     loaded_font_xml = None
     loaded_font_id = None  # 存储读取的字体ID
     loaded_font_name = None  # 存储读取的字体名称
+
+    # 取色器状态管理
+    picker_state = {
+        'target_row': None,
+        'target_col': None
+    }
+    picker_window = None
+    preview_frame = None
 
     def parse_data(data):
         """
@@ -1659,8 +1706,9 @@ def interactive_bezier_curve():
         功能:
             处理表格的右键菜单, 支持添加/删除行和列
         """
-        def __init__(self, table):
+        def __init__(self, table, start_color_picker_func):
             self.table = table
+            self.start_color_picker_func = start_color_picker_func
             # 禁用tksheet默认右键菜单
             self.table.disable_bindings("right_click_popup_menu")
             # 绑定自定义右键菜单
@@ -1678,10 +1726,24 @@ def interactive_bezier_curve():
             self.selected_row = None
             self.selected_col = None
 
+        def pick_screen_color(self):
+            """
+            功能:
+                从右键菜单触发屏幕取色
+            参数:
+                无
+            返回:
+                无
+            """
+            # 设置选中状态
+            self.table.select_cell(self.selected_row, self.selected_col)
+            # 调用取色函数
+            self.start_color_picker_func()
+
         def show_context_menu(self, event):
             """
             功能:
-                显示右键菜单
+                显示右键菜单, 根据列类型显示不同选项
             参数:
                 event: 鼠标事件对象
             返回:
@@ -1693,9 +1755,24 @@ def interactive_bezier_curve():
                 self.selected_row = selected.row
                 self.selected_col = selected.column
 
-                # 对于数据列(第4列及之后)才显示菜单
+                # 清空菜单
+                self.menu.delete(0, tk.END)
+
+                # 颜色列(0-2列)显示取色选项
+                if self.selected_col in [0, 1, 2]:
+                    self.menu.add_command(label="屏幕取色", command=self.pick_screen_color)
+                    self.menu.add_separator()
+
+                # 数据列(第3列及之后)显示原有选项
                 if self.selected_col >= 3:
-                    self.menu.post(event.x_root, event.y_root)
+                    self.menu.add_command(label="删除行", command=self.delete_row)
+                    self.menu.add_command(label="删除列", command=self.delete_column)
+                    self.menu.add_command(label="在上方添加行", command=self.add_row)
+                    self.menu.add_command(label="在下方添加行", command=self.add_row_below)
+                    self.menu.add_command(label="在左侧添加列", command=self.add_column)
+                    self.menu.add_command(label="在右侧添加列", command=self.add_column_right)
+
+                self.menu.post(event.x_root, event.y_root)
 
         def delete_row(self):
             """删除选中的行"""
@@ -1847,10 +1924,10 @@ def interactive_bezier_curve():
         table_window.resizable(True, True)
         table_window.title("Energy Data Table")
 
-        table_window.geometry("700x280")  # 更紧凑的初始大小，同时保证底部按钮可见
+        table_window.geometry("900x350")  # 增加窗口大小以显示所有按钮
 
         # 创建表格的容器框架
-        table_frame = tk.Frame(table_window, width=680, height=200)
+        table_frame = tk.Frame(table_window, width=880, height=250)
         table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
         buttons_frame = tk.Frame(table_window)
         buttons_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -1859,8 +1936,8 @@ def interactive_bezier_curve():
         table = Sheet(
             table_frame,
             headers=['Curve Color', 'Marker Color', 'Text Color', 'E1', 'E2', 'E3'],
-            height=200,
-            width=680,
+            height=250,
+            width=880,
             show_row_index=True,  # 显示行号
             show_header=True,     # 显示表头
             show_top_left=True,   # 显示左上角空白区域
@@ -1882,7 +1959,7 @@ def interactive_bezier_curve():
 
         # 设置列宽
         for col_idx in range(6):  # 初始6列
-            table.column_width(column=col_idx, width=100)
+            table.column_width(column=col_idx, width=120)
 
         # 设置表格所有显示内容居中对齐（数据区、表头、行号）
         table.table_align(align="center")
@@ -1908,8 +1985,357 @@ def interactive_bezier_curve():
         # 绑定双击事件, 颜色列打开颜色选择器, 其他列打开编辑器
         table.bind("<Double-Button-1>", on_color_cell_double_click)
 
+        def start_color_picker():
+            """
+            功能:
+                启动屏幕取色器, 验证选择并初始化取色流程
+            参数:
+                无
+            返回:
+                无
+            """
+            nonlocal picker_state, picker_window
+
+            # 获取当前选中的单元格
+            selected = table.get_currently_selected()
+            if not selected:
+                messagebox.showwarning("警告", "请先选择一个颜色单元格")
+                return
+
+            row = selected.row
+            col = selected.column
+
+            # 验证是否为颜色列(前3列)
+            if col not in [0, 1, 2]:
+                messagebox.showwarning("警告", "请选择颜色列(Curve Color, Marker Color, Text Color)")
+                return
+
+            # 保存选中的单元格位置
+            picker_state['target_row'] = row
+            picker_state['target_col'] = col
+
+            # 最小化所有窗口
+            root.iconify()
+            if table_window and table_window.winfo_exists():
+                table_window.iconify()
+
+            # 创建全屏取色窗口
+            create_picker_window()
+
+        def build_capture_context(screenshot):
+            """
+            功能:
+                构建屏幕坐标到截图像素坐标的映射上下文
+            参数:
+                screenshot: PIL截图对象
+            返回:
+                字典, 包含left/top和缩放比例
+            """
+            img_width, img_height = screenshot.size
+
+            # 默认值(单屏或无法读取系统虚拟屏信息时)
+            left = 0
+            top = 0
+            virtual_width = max(root.winfo_screenwidth(), 1)
+            virtual_height = max(root.winfo_screenheight(), 1)
+
+            # Windows下优先使用虚拟桌面坐标, 兼容多显示器
+            if os.name == 'nt':
+                try:
+                    user32 = ctypes.windll.user32
+                    left = user32.GetSystemMetrics(76)          # SM_XVIRTUALSCREEN
+                    top = user32.GetSystemMetrics(77)           # SM_YVIRTUALSCREEN
+                    virtual_width = user32.GetSystemMetrics(78) # SM_CXVIRTUALSCREEN
+                    virtual_height = user32.GetSystemMetrics(79)# SM_CYVIRTUALSCREEN
+                except Exception:
+                    pass
+
+            scale_x = img_width / max(virtual_width, 1)
+            scale_y = img_height / max(virtual_height, 1)
+
+            return {
+                'left': left,
+                'top': top,
+                'virtual_width': virtual_width,
+                'virtual_height': virtual_height,
+                'scale_x': scale_x,
+                'scale_y': scale_y
+            }
+
+        def map_screen_to_capture(screen_x, screen_y, capture_context):
+            """
+            功能:
+                将屏幕绝对坐标映射为截图像素坐标
+            参数:
+                screen_x, screen_y: 屏幕绝对坐标
+                capture_context: 映射上下文
+            返回:
+                元组, (img_x, img_y)
+            """
+            img_x = int(round((screen_x - capture_context['left']) * capture_context['scale_x']))
+            img_y = int(round((screen_y - capture_context['top']) * capture_context['scale_y']))
+            return img_x, img_y
+
+        def create_picker_window():
+            """
+            功能:
+                创建全屏透明取色窗口, 捕获鼠标点击
+            参数:
+                无
+            返回:
+                无
+            """
+            nonlocal picker_window, preview_frame
+
+            # 先截取当前屏幕作为背景
+            root.update()
+            if table_window and table_window.winfo_exists():
+                table_window.update()
+
+            # 延迟一下确保窗口完全最小化
+            root.after(100)
+            try:
+                screenshot = ImageGrab.grab(all_screens=True)
+            except TypeError:
+                screenshot = ImageGrab.grab()
+            except Exception as e:
+                messagebox.showerror("错误", f"屏幕截图失败: {str(e)}")
+                cancel_color_picker(None)
+                return
+
+            capture_context = build_capture_context(screenshot)
+
+            # 创建顶层窗口
+            picker_window = tk.Toplevel()
+            picker_window.overrideredirect(True)
+            picker_window.attributes('-topmost', True)
+
+            # 覆盖整个虚拟桌面(含多显示器和负坐标), 避免跨屏后光标失去十字形态
+            try:
+                virtual_left = int(capture_context['left'])
+                virtual_top = int(capture_context['top'])
+                virtual_width = int(capture_context['virtual_width'])
+                virtual_height = int(capture_context['virtual_height'])
+                picker_window.geometry(f"{virtual_width}x{virtual_height}{virtual_left:+d}{virtual_top:+d}")
+            except Exception:
+                # 退回全屏模式(主屏)
+                picker_window.attributes('-fullscreen', True)
+
+            # 设置窗口完全透明
+            try:
+                picker_window.attributes('-alpha', 0.01)
+            except:
+                pass
+
+            picker_window.config(cursor='crosshair')
+
+            # 创建提示标签
+            hint_label = tk.Label(
+                picker_window,
+                text="点击屏幕任意位置取色, 按ESC取消",
+                font=('Arial', 14, 'bold'),
+                bg='yellow',
+                fg='black',
+                padx=10,
+                pady=5
+            )
+            hint_label.place(relx=0.5, rely=0.05, anchor='center')
+
+            # 创建预览窗口 - 使用独立的Toplevel确保可见
+            preview_frame = tk.Toplevel()
+            preview_frame.attributes('-topmost', True)
+            preview_frame.overrideredirect(True)  # 无边框
+            preview_frame.geometry('180x100+10+60')  # 位置和大小
+            preview_frame.config(bg='white', relief='solid', borderwidth=3, cursor='crosshair')
+
+            # 预览标题
+            title_label = tk.Label(preview_frame, text="颜色预览", font=('Arial', 9, 'bold'), bg='white')
+            title_label.pack(pady=2)
+
+            # 颜色显示区域
+            color_display = tk.Label(preview_frame, text="", bg='white', height=2)
+            color_display.pack(fill=tk.BOTH, expand=True, padx=5, pady=2)
+
+            # 十六进制值标签
+            hex_label = tk.Label(preview_frame, text="#000000", font=('Arial', 11, 'bold'), bg='white')
+            hex_label.pack(pady=2)
+
+            # 保存截图供取色使用
+            picker_window.screenshot = screenshot
+            picker_window.capture_context = capture_context
+
+            # 绑定事件到主窗口
+            picker_window.bind('<Button-1>', on_screen_click)
+            picker_window.bind('<Motion>', lambda e: update_color_preview(e, color_display, hex_label, screenshot, capture_context))
+            picker_window.bind('<Escape>', cancel_color_picker)
+
+            # 绑定事件到预览窗口
+            preview_frame.bind('<Button-1>', on_screen_click)
+            preview_frame.bind('<Motion>', lambda e: update_color_preview(e, color_display, hex_label, screenshot, capture_context))
+            preview_frame.bind('<Escape>', cancel_color_picker)
+
+            # 保存预览窗口引用以便关闭
+            picker_window.preview_window = preview_frame
+
+            # 确保焦点在主窗口上以接收ESC键
+            picker_window.lift()
+            picker_window.focus_force()
+
+        def update_color_preview(event, color_display, hex_label, screenshot, capture_context):
+            """
+            功能:
+                实时更新颜色预览
+            参数:
+                event: 鼠标事件对象
+                color_display: 颜色显示标签
+                hex_label: 十六进制值标签
+                screenshot: 预先截取的屏幕图像
+                capture_context: 坐标映射上下文
+            返回:
+                无
+            """
+            try:
+                # 读取鼠标真实屏幕坐标, 避免事件坐标在不同DPI下产生偏差
+                if picker_window and picker_window.winfo_exists():
+                    screen_x, screen_y = picker_window.winfo_pointerxy()
+                else:
+                    screen_x, screen_y = event.x_root, event.y_root
+                x, y = map_screen_to_capture(screen_x, screen_y, capture_context)
+
+                # 确保坐标在屏幕范围内
+                width, height = screenshot.size
+                if 0 <= x < width and 0 <= y < height:
+                    rgb = screenshot.getpixel((x, y))
+                    hex_color = '#{:02x}{:02x}{:02x}'.format(rgb[0], rgb[1], rgb[2])
+                    color_display.config(bg=hex_color)
+                    hex_label.config(text=hex_color)
+            except Exception as e:
+                pass
+
+        def on_screen_click(event):
+            """
+            功能:
+                处理屏幕点击事件, 获取点击位置的颜色
+            参数:
+                event: 鼠标事件对象, 包含点击坐标
+            返回:
+                无
+            """
+            nonlocal picker_window
+
+            try:
+                if not picker_window or not picker_window.winfo_exists():
+                    return
+
+                # 获取鼠标绝对坐标
+                screen_x, screen_y = picker_window.winfo_pointerxy()
+
+                # 从预先截取的屏幕图像中获取颜色
+                screenshot = picker_window.screenshot
+                capture_context = picker_window.capture_context
+                x, y = map_screen_to_capture(screen_x, screen_y, capture_context)
+
+                width, height = screenshot.size
+                if not (0 <= x < width and 0 <= y < height):
+                    raise ValueError("点击坐标超出屏幕截图范围")
+
+                rgb_color = screenshot.getpixel((x, y))
+
+                # 转换为十六进制格式
+                hex_color = '#{:02x}{:02x}{:02x}'.format(rgb_color[0], rgb_color[1], rgb_color[2])
+
+                # 关闭预览窗口
+                if hasattr(picker_window, 'preview_window'):
+                    picker_window.preview_window.destroy()
+
+                # 关闭取色窗口
+                picker_window.destroy()
+                picker_window = None
+
+                # 恢复主窗口
+                root.deiconify()
+                if table_window and table_window.winfo_exists():
+                    table_window.deiconify()
+
+                # 更新单元格颜色
+                apply_picked_color(hex_color)
+
+            except ImportError:
+                messagebox.showerror("错误", "PIL库未安装, 请运行: pip install Pillow")
+                cancel_color_picker(None)
+            except OSError as e:
+                messagebox.showerror("错误", f"屏幕截图失败: {str(e)}")
+                cancel_color_picker(None)
+            except Exception as e:
+                messagebox.showerror("错误", f"取色失败: {str(e)}")
+                cancel_color_picker(None)
+
+        def apply_picked_color(hex_color):
+            """
+            功能:
+                将取得的颜色应用到选中的单元格
+            参数:
+                hex_color: 字符串, 十六进制颜色代码, 如'#FF0000'
+            返回:
+                无
+            """
+            nonlocal picker_state
+
+            row = picker_state['target_row']
+            col = picker_state['target_col']
+
+            # 更新单元格值
+            table.set_cell_data(row, col, hex_color)
+
+            # 更新单元格背景和前景色
+            table.highlight_cells(
+                row=row,
+                column=col,
+                bg=hex_color,
+                fg=get_contrast_color(hex_color)
+            )
+
+            # 刷新图表
+            update_plot()
+
+            # 清空状态
+            picker_state['target_row'] = None
+            picker_state['target_col'] = None
+
+        def cancel_color_picker(event):
+            """
+            功能:
+                取消取色操作, 恢复窗口状态
+            参数:
+                event: 键盘事件对象(ESC键)
+            返回:
+                无
+            """
+            nonlocal picker_window, picker_state
+
+            # 关闭预览窗口
+            if picker_window and hasattr(picker_window, 'preview_window'):
+                try:
+                    picker_window.preview_window.destroy()
+                except:
+                    pass
+
+            # 关闭取色窗口
+            if picker_window:
+                picker_window.destroy()
+                picker_window = None
+
+            # 恢复主窗口
+            root.deiconify()
+            if table_window and table_window.winfo_exists():
+                table_window.deiconify()
+
+            # 清空状态
+            picker_state['target_row'] = None
+            picker_state['target_col'] = None
+
         # 将右键菜单绑定到表格
-        right_click_menu = RightClickMenu(table)
+        right_click_menu = RightClickMenu(table, start_color_picker)
 
             # 添加新列的函数
         def add_column():
@@ -2279,21 +2705,23 @@ def interactive_bezier_curve():
                 print(f"加载失败: {str(e)}")
                 messagebox.showerror("错误", f"加载失败:\n{str(e)}")
         
-        add_row_button = tk.Button(table_frame, text="Add Row", command=add_row)
-        add_column_button = tk.Button(table_frame, text="Add Column", command=add_column)
-        delete_row_button = tk.Button(table_frame, text="Delete Row", command=delete_row)
-        delete_column_button = tk.Button(table_frame, text="Delete Column", command=delete_column)
+        add_row_button = tk.Button(buttons_frame, text="Add Row", command=add_row)
+        add_column_button = tk.Button(buttons_frame, text="Add Column", command=add_column)
+        delete_row_button = tk.Button(buttons_frame, text="Delete Row", command=delete_row)
+        delete_column_button = tk.Button(buttons_frame, text="Delete Column", command=delete_column)
 
-        save_button = tk.Button(table_frame, text="Save Data", command=save_table_data)
-        load_button = tk.Button(table_frame, text="Load Data", command=load_table_data)
+        save_button = tk.Button(buttons_frame, text="Save Data", command=save_table_data)
+        load_button = tk.Button(buttons_frame, text="Load Data", command=load_table_data)
+        pick_color_button = tk.Button(buttons_frame, text="Pick Color", command=start_color_picker)
 
 
-        add_row_button.pack(side=tk.LEFT, padx=5, pady=5)
-        add_column_button.pack(side=tk.LEFT, padx=5, pady=5)
-        delete_row_button.pack(side=tk.LEFT, padx=5, pady=5)
-        delete_column_button.pack(side=tk.LEFT, padx=5, pady=5)
-        save_button.pack(side=tk.LEFT, padx=5, pady=5)
-        load_button.pack(side=tk.LEFT, padx=5, pady=5)
+        add_row_button.pack(side=tk.LEFT, padx=5, pady=2)
+        add_column_button.pack(side=tk.LEFT, padx=5, pady=2)
+        delete_row_button.pack(side=tk.LEFT, padx=5, pady=2)
+        delete_column_button.pack(side=tk.LEFT, padx=5, pady=2)
+        save_button.pack(side=tk.LEFT, padx=5, pady=2)
+        load_button.pack(side=tk.LEFT, padx=5, pady=2)
+        pick_color_button.pack(side=tk.LEFT, padx=5, pady=2)
 
         return table_window, table
 
