@@ -1,4 +1,4 @@
-
+﻿
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -1842,9 +1842,6 @@ def interactive_bezier_curve():
                         fg=get_contrast_color(color_code)
                     )
                     update_plot()
-            else:
-                # 对于其他列, 打开编辑器支持光标编辑
-                table.open_cell()
         # 创建一个独立的表格窗口
         table_window = tk.Toplevel(root)
         table_window.resizable(True, True)
@@ -1876,9 +1873,12 @@ def interactive_bezier_curve():
             "single_select",      # 单击选择
             "drag_select",        # 拖拽选择
             "row_select",         # 行选择
-            "column_select"       # 列选择
-            # 注意: 不使用 "edit_cell" 绑定, 通过双击手动打开编辑器以支持光标编辑
+            "column_select",      # 列选择
+            "edit_cell"           # 启用单元格编辑（单击后可直接键盘输入）
         )
+
+        # 颜色列通过颜色选择器修改，避免进入文本编辑器
+        table.readonly_columns(columns=[0, 1, 2], readonly=True)
 
         # 设置列宽
         for col_idx in range(6):  # 初始6列
@@ -1906,7 +1906,7 @@ def interactive_bezier_curve():
         table.bind("<<SheetModified>>", lambda e: update_plot())
 
         # 绑定双击事件, 颜色列打开颜色选择器, 其他列打开编辑器
-        table.bind("<Double-1>", on_color_cell_double_click)
+        table.bind("<Double-Button-1>", on_color_cell_double_click)
 
         # 将右键菜单绑定到表格
         right_click_menu = RightClickMenu(table)
