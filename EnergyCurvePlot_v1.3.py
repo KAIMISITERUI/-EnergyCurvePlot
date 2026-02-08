@@ -1979,8 +1979,21 @@ def interactive_bezier_curve():
         # 取消初始行的选中状态
         table.deselect("all")
 
+        # 定义数据修改时的处理函数
+        def on_sheet_modified(_event):
+            """
+            功能:
+                处理表格数据修改事件, 更新绘图并自动调整列宽
+            参数:
+                _event: 事件对象(未使用)
+            返回:
+                无
+            """
+            update_plot()
+            auto_adjust_column_widths()
+
         # 绑定编辑验证
-        table.bind("<<SheetModified>>", lambda e: update_plot())
+        table.bind("<<SheetModified>>", on_sheet_modified)
 
         # 绑定双击事件, 颜色列打开颜色选择器, 其他列打开编辑器
         table.bind("<Double-Button-1>", on_color_cell_double_click)
@@ -2364,6 +2377,9 @@ def interactive_bezier_curve():
             current_headers.append(new_header)
             table.headers(current_headers)
 
+            # 自动调整列宽
+            auto_adjust_column_widths()
+
         def add_row():
             """
             功能:
@@ -2392,6 +2408,9 @@ def interactive_bezier_curve():
             # 取消新添加行的选中状态
             table.deselect("all")
 
+            # 自动调整列宽
+            auto_adjust_column_widths()
+
         def delete_column():
             """
             功能:
@@ -2416,6 +2435,9 @@ def interactive_bezier_curve():
                          [f'E{i+1}' for i in range(total_cols - 4)]
             table.headers(new_headers)
 
+            # 自动调整列宽
+            auto_adjust_column_widths()
+
         def delete_row():
             """
             功能:
@@ -2431,6 +2453,8 @@ def interactive_bezier_curve():
             if total_rows > 0:
                 # 删除最后一行
                 table.delete_rows([total_rows - 1])
+                # 自动调整列宽
+                auto_adjust_column_widths()
             else:
                 print("表格为空, 无法删除行")
 
@@ -2701,10 +2725,56 @@ def interactive_bezier_curve():
                 print(f"表格数据已从以下位置加载: {file_path}")
                 messagebox.showinfo("成功", f"数据已从以下位置加载:\n{file_path}")
 
+                # 自动调整列宽
+                auto_adjust_column_widths()
+
             except Exception as e:
                 print(f"加载失败: {str(e)}")
                 messagebox.showerror("错误", f"加载失败:\n{str(e)}")
-        
+
+        def auto_adjust_column_widths():
+            """
+            功能:
+                根据单元格内容自动调整列宽, 保持最小宽度为120
+            参数:
+                无
+            返回:
+                无
+            """
+            MIN_WIDTH = 120  # 最小列宽
+            CHAR_WIDTH = 10  # 英文字符平均宽度(像素), 增加以确保显示完整
+            CHINESE_WIDTH = 18  # 中文字符平均宽度(像素), 增加以确保显示完整
+            PADDING = 40  # 额外的padding空间, 增加以确保内容不被截断
+            WIDTH_MULTIPLIER = 1.15  # 宽度乘数, 额外增加15%的空间
+
+            total_cols = table.total_columns()
+            total_rows = table.total_rows()
+
+            for col_idx in range(total_cols):
+                max_width = MIN_WIDTH  # 从最小宽度开始
+
+                # 检查表头宽度
+                headers = table.headers()
+                if headers and col_idx < len(headers):
+                    header_text = str(headers[col_idx])
+                    header_width = sum(CHINESE_WIDTH if ord(c) > 127 else CHAR_WIDTH for c in header_text)
+                    max_width = max(max_width, header_width + PADDING)
+
+                # 检查每个单元格的内容宽度
+                for row_idx in range(total_rows):
+                    cell_value = table.get_cell_data(row_idx, col_idx)
+                    if cell_value is not None:
+                        cell_text = str(cell_value)
+                        # 计算文本宽度, 中文字符占用更多空间
+                        text_width = sum(CHINESE_WIDTH if ord(c) > 127 else CHAR_WIDTH for c in cell_text)
+                        max_width = max(max_width, text_width + PADDING)
+
+                # 应用宽度乘数, 额外增加空间以确保内容完全显示
+                final_width = int(max_width * WIDTH_MULTIPLIER)
+
+                # 设置列宽, 确保不小于最小宽度
+                table.column_width(column=col_idx, width=max(final_width, MIN_WIDTH))
+
         add_row_button = tk.Button(buttons_frame, text="Add Row", command=add_row)
         add_column_button = tk.Button(buttons_frame, text="Add Column", command=add_column)
         delete_row_button = tk.Button(buttons_frame, text="Delete Row", command=delete_row)
