@@ -1,6 +1,22 @@
+# EnergyCurvePlot 依赖项列表
+
+# 核心数值计算
 numpy
+
+# 数据可视化和绘图
 matplotlib
+
+# 数据处理和分析
 pandas
+
+# Excel 文件读写
 openpyxl
+
+# 打包工具
 pyinstaller
+
+# 表格编辑组件
 tksheet
+
+# 图像处理 (用于截图功能)
+pillow

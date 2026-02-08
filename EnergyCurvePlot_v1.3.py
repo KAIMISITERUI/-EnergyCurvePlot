@@ -1,5 +1,4 @@
 ﻿
-
 import numpy as np
 import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
@@ -33,6 +32,9 @@ from PIL import ImageGrab
 3. 保存cdxml文件现在可以选择保存位置.
 4. 增加了读取chemdraw文件风格的功能,现在可以使用“Load CDXML Style'选择自己常用风格的chemdraw文件,读取后续保存的也会是同样的风格。同时保存配置的时候也会被存储到配置信息里.
 5. 增加了显示数字和显示文字的选项
+6. 增加了取色器功能，选择颜色单元格后点击取色器可直接提取颜色信息
+7. 为每行参数增加了虚实线的选项，可以单独设置虚线
+
 
 1.2 版本更新日志
 
@@ -1092,7 +1094,7 @@ def interactive_bezier_curve():
                             location.append(value[2])
                             original_x.append(index + 1)
                         except ValueError:
-                            print(f"Invalid value at row {row}, column {index + 2}. Please correct.")
+                            print(f"Invalid value at row {row + 1}, column {index + 5}. Please correct.")
                             return
 
                 # 调用贝塞尔曲线计算函数
@@ -1808,7 +1810,7 @@ def interactive_bezier_curve():
             """在选中行上方添加新行"""
             if self.selected_row is not None:
                 num_cols = self.table.total_columns()
-                new_values = ['#000000', '#000000', '#000000'] + [''] * (num_cols - 3)
+                new_values = ['#000000', '#000000', '#000000', 'Solid'] + [''] * (num_cols - 4)
                 self.table.insert_row(row=new_values, idx=self.selected_row)
 
                 # 设置新行前3列的背景颜色
@@ -1827,7 +1829,7 @@ def interactive_bezier_curve():
             """在选中行下方添加新行"""
             if self.selected_row is not None:
                 num_cols = self.table.total_columns()
-                new_values = ['#000000', '#000000', '#000000'] + [''] * (num_cols - 3)
+                new_values = ['#000000', '#000000', '#000000', 'Solid'] + [''] * (num_cols - 4)
                 self.table.insert_row(row=new_values, idx=self.selected_row + 1)
 
                 # 设置新行前3列的背景颜色
@@ -1965,6 +1967,9 @@ def interactive_bezier_curve():
         # 颜色列通过颜色选择器修改，避免进入文本编辑器
         table.readonly_columns(columns=[0, 1, 2], readonly=True)
 
+        # 为Line Style列(第3列)设置下拉列表
+        table.dropdown_column(3, values=['Solid', 'Dashed'], set_value='Solid')
+
         # 设置列宽
         for col_idx in range(7):  # 现在有7列
             table.column_width(column=col_idx, width=120)
@@ -1977,7 +1982,7 @@ def interactive_bezier_curve():
         table.pack(fill=tk.BOTH, expand=True)
 
         # 初始化一行数据
-        table.insert_row(row=['#000000', '#000000', '#000000', '', 0.0, 0.0, 0.0], idx=0)
+        table.insert_row(row=['#000000', '#000000', '#000000', 'Solid', 0.0, 0.0, 0.0], idx=0)
 
         # 设置前3列的背景颜色为其颜色值
         for col_idx in range(3):
@@ -2398,7 +2403,7 @@ def interactive_bezier_curve():
                 无
             """
             num_columns = table.total_columns()
-            new_row_values = ['#000000', '#000000', '#000000', ''] + [''] * (num_columns - 4)
+            new_row_values = ['#000000', '#000000', '#000000', 'Solid'] + [''] * (num_columns - 4)
 
             # 在末尾插入新行
             new_row_idx = table.total_rows()
@@ -2730,8 +2735,12 @@ def interactive_bezier_curve():
                 table.set_sheet_data(normalized_data)
                 headers = ['Curve Color', 'Marker Color', 'Text Color', 'Line Style'] + [f'E{i+1}' for i in range(num_cols - 4)]
                 table.headers(headers)
+                # 前四列(颜色设定和线型)保持初始宽度120, 其他列设置为100
                 for col_idx in range(num_cols):
-                    table.column_width(column=col_idx, width=100)
+                    if col_idx < 4:
+                        table.column_width(column=col_idx, width=120)
+                    else:
+                        table.column_width(column=col_idx, width=100)
 
                 # 设置表格所有显示内容居中对齐（数据区、表头、行号）
                 table.table_align(align="center")
@@ -2770,7 +2779,7 @@ def interactive_bezier_curve():
         def auto_adjust_column_widths():
             """
             功能:
-                根据单元格内容自动调整列宽, 保持最小宽度为120
+                根据单元格内容自动调整列宽, 保持最小宽度为120, 跳过前四列(颜色设定和线型)
             参数:
                 无
             返回:
@@ -2785,7 +2794,8 @@ def interactive_bezier_curve():
             total_cols = table.total_columns()
             total_rows = table.total_rows()
 
-            for col_idx in range(total_cols):
+            # 从第4列开始调整, 跳过前四列(颜色设定和线型)
+            for col_idx in range(4, total_cols):
                 max_width = MIN_WIDTH  # 从最小宽度开始
 
                 # 检查表头宽度
@@ -3161,7 +3171,7 @@ def interactive_bezier_curve():
                 if len(values) < 3:
                     continue
 
-                for index, value in enumerate(values[3:]):
+                for index, value in enumerate(values[4:]):  # 从第4列开始读取能量数据
                     value = str(value)
                     if value.strip():  # 如果值不为空
                         try:
@@ -3169,7 +3179,7 @@ def interactive_bezier_curve():
                             total_y.append(float(value[0]))
 
                         except ValueError:
-                            print(f"Invalid value at row {row}, column {index + 2}. Please correct.")
+                            print(f"Invalid value at row {row + 1}, column {index + 5}. Please correct.")
                             return
 
             scaled_y_points = [y * scale_factor*scale_factor_y / 2 for y in total_y]
@@ -3192,7 +3202,7 @@ def interactive_bezier_curve():
                 target = []
                 location = []
                 original_x = []
-                for index, value in enumerate(values[3:]):
+                for index, value in enumerate(values[4:]):  # 从第4列开始读取能量数据
                     value = str(value)
                     if value.strip():  # 如果值不为空
                         try:
@@ -3203,12 +3213,19 @@ def interactive_bezier_curve():
                             original_x.append(index + 1)
 
                         except ValueError:
-                            print(f"Invalid value at row {row}, column {index + 2}. Please correct.")
+                            print(f"Invalid value at row {row + 1}, column {index + 5}. Please correct.")
                             return
 
                 curve_color = values[0]
                 marker_color = values[1]
                 text_color = values[2]
+                row_line_style = values[3]
+
+                # 处理Line Style, 如果为空则使用全局设置
+                if row_line_style in ('', None):
+                    effective_line_type = line_type
+                else:
+                    effective_line_type = row_line_style
 
 
                 # 调用贝塞尔曲线计算函数
@@ -3250,9 +3267,9 @@ def interactive_bezier_curve():
 
                 if shape_type ==  "line":
                     if width_factor == 0:
-                        curves_xml = draw_line(scaled_x_adjusted,scaled_y_points,line_type,curve_width,bond_length,curve_color_index,connect_type,original_x)
+                        curves_xml = draw_line(scaled_x_adjusted,scaled_y_points,effective_line_type,curve_width,bond_length,curve_color_index,connect_type,original_x)
                     else:
-                        curves_xml = draw_curve(bezier_curves, connect_type, bond_length,curve_color_index,line_type,original_x,curve_width)
+                        curves_xml = draw_curve(bezier_curves, connect_type, bond_length,curve_color_index,effective_line_type,original_x,curve_width)
                     graph_xml  += "\n".join(curves_xml)
                     rectangle_xml = generate_rectangle_xml(scaled_x_adjusted, scaled_y_points, bond_length, marker_color_index, connect_type,original_x,bond_width)
                     graph_xml  += "\n".join(rectangle_xml)
@@ -3261,9 +3278,9 @@ def interactive_bezier_curve():
 
                 elif shape_type == "circle":
                     if width_factor == 0:
-                        curves_xml = draw_line(scaled_x_adjusted,scaled_y_points,line_type,curve_width,radius,curve_color_index,connect_type,original_x)
+                        curves_xml = draw_line(scaled_x_adjusted,scaled_y_points,effective_line_type,curve_width,radius,curve_color_index,connect_type,original_x)
                     else:
-                        curves_xml = draw_curve(bezier_curves, connect_type, radius,curve_color_index,line_type,original_x,curve_width)
+                        curves_xml = draw_curve(bezier_curves, connect_type, radius,curve_color_index,effective_line_type,original_x,curve_width)
                     graph_xml  += "\n".join(curves_xml)
                     circles_xml = generate_circle_xml(scaled_x_adjusted, scaled_y_points, radius, marker_color_index, connect_type,original_x)
                     graph_xml  += "\n".join(circles_xml)
@@ -3271,9 +3288,9 @@ def interactive_bezier_curve():
                     graph_xml  += "\n".join(text_xml)
                 elif shape_type == "None":
                     if width_factor == 0:
-                        curves_xml = draw_line(scaled_x_adjusted,scaled_y_points,line_type,curve_width,0,curve_color_index,connect_type,original_x)
+                        curves_xml = draw_line(scaled_x_adjusted,scaled_y_points,effective_line_type,curve_width,0,curve_color_index,connect_type,original_x)
                     else:
-                        curves_xml = draw_curve(bezier_curves, connect_type,0,curve_color_index,line_type,original_x,curve_width)
+                        curves_xml = draw_curve(bezier_curves, connect_type,0,curve_color_index,effective_line_type,original_x,curve_width)
                     graph_xml  += "\n".join(curves_xml)
                     text_xml = generate_text_cdxml(scaled_x_adjusted, scaled_y_points, original_y,target, location,target_layout,target_location,text_space,text_base_movement,0,0,text_color_index, connect_type, original_x,font_size,font_type=current_font_id, Z_value=70, show_numbers=show_numbers_var.get(), show_targets=show_targets_var.get())
                     graph_xml  += "\n".join(text_xml)
