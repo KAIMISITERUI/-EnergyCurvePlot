@@ -1063,14 +1063,26 @@ def interactive_bezier_curve():
                     values.append(table.get_cell_data(row, col))
 
                 # 跳过结构不完整的临时行，避免索引越界
-                if len(values) < 3:
+                if len(values) < 4:  # 现在至少需要4列(3个颜色列+1个Line Style列)
                     continue
+
+                # 读取该行的颜色设置
+                curve_color = values[0]
+                marker_color = values[1]
+                text_color = values[2]
+
+                # 读取该行的Line Style设置, 如果为空或None则使用全局设置
+                row_line_style = values[3]
+                if row_line_style in ('', None):
+                    effective_line_type = line_type  # 使用全局设置
+                else:
+                    effective_line_type = row_line_style  # 使用行级设置
 
                 original_y = []
                 original_x = []
                 target = []
                 location = []
-                for index, value in enumerate(values[3:]):
+                for index, value in enumerate(values[4:]):  # 从第4列开始读取能量数据
                     value = str(value)
                     if str(value).strip():  # If value is not empty
                         try:
@@ -1082,10 +1094,6 @@ def interactive_bezier_curve():
                         except ValueError:
                             print(f"Invalid value at row {row}, column {index + 2}. Please correct.")
                             return
-
-                curve_color = values[0]
-                marker_color = values[1]
-                text_color = values[2]
 
                 # 调用贝塞尔曲线计算函数
                 x_adjusted, y_points, bezier_curves = get_bezier_curve_points_flat(
@@ -1119,11 +1127,11 @@ def interactive_bezier_curve():
                         # 连续曲线
                         Bx = (1 - t)**3 * X[1] + 3 * (1 - t)**2 * t * X[2] + 3 * (1 - t) * t**2 * X[3] + t**3 * X[4]
                         By = (1 - t)**3 * Y[1] + 3 * (1 - t)**2 * t * Y[2] + 3 * (1 - t) * t**2 * Y[3] + t**3 * Y[4]
-                        if line_type == "Dashed":
-                            curve_line = ax.plot(Bx, By, color=curve_color,linewidth=line_width,linestyle=line_type.lower(),dashes=(5*0.6/curve_width, 5*0.6/curve_width))
+                        if effective_line_type == "Dashed":
+                            curve_line = ax.plot(Bx, By, color=curve_color,linewidth=line_width,linestyle=effective_line_type.lower(),dashes=(5*0.6/curve_width, 5*0.6/curve_width))
                             curve_lines.append(curve_line)
-                        elif line_type == "Solid":
-                            curve_line = ax.plot(Bx, By, color=curve_color,linewidth=line_width,linestyle=line_type.lower())
+                        elif effective_line_type == "Solid":
+                            curve_line = ax.plot(Bx, By, color=curve_color,linewidth=line_width,linestyle=effective_line_type.lower())
                             curve_lines.append(curve_line)
 
                     elif connect_type == "side":
@@ -1143,14 +1151,14 @@ def interactive_bezier_curve():
                         X[4] = X[4] + offset*(2*original_x[i+1]-1)
                         X[5] = X[5] + offset*(2*original_x[i+1]-1)
 
-                            
+
                         Bx = (1 - t)**3 * X[1] + 3 * (1 - t)**2 * t * X[2] + 3 * (1 - t) * t**2 * X[3] + t**3 * X[4]
                         By = (1 - t)**3 * Y[1] + 3 * (1 - t)**2 * t * Y[2] + 3 * (1 - t) * t**2 * Y[3] + t**3 * Y[4]
-                        if line_type == "Dashed":
-                            curve_line = ax.plot(Bx, By, color=curve_color,linewidth=line_width,linestyle=line_type.lower(),dashes=(5*0.6/curve_width, 5*0.6/curve_width))
+                        if effective_line_type == "Dashed":
+                            curve_line = ax.plot(Bx, By, color=curve_color,linewidth=line_width,linestyle=effective_line_type.lower(),dashes=(5*0.6/curve_width, 5*0.6/curve_width))
                             curve_lines.append(curve_line)
-                        elif line_type == "Solid":
-                            curve_line = ax.plot(Bx, By, color=curve_color,linewidth=line_width,linestyle=line_type.lower())
+                        elif effective_line_type == "Solid":
+                            curve_line = ax.plot(Bx, By, color=curve_color,linewidth=line_width,linestyle=effective_line_type.lower())
                             curve_lines.append(curve_line)
 
                 # 绘制水平线或圆形
@@ -1874,8 +1882,8 @@ def interactive_bezier_curve():
                 无
             """
             total_cols = self.table.total_columns()
-            new_headers = ['Curve Color', 'Marker Color', 'Text Color'] + \
-                         [f'E{i+1}' for i in range(total_cols - 3)]
+            new_headers = ['Curve Color', 'Marker Color', 'Text Color', 'Line Style'] + \
+                         [f'E{i+1}' for i in range(total_cols - 4)]
             self.table.headers(new_headers)
 
     # 绑定放大和缩小事件处理函数到 Matplotlib 图表上
@@ -1935,7 +1943,7 @@ def interactive_bezier_curve():
         # 创建tksheet表格
         table = Sheet(
             table_frame,
-            headers=['Curve Color', 'Marker Color', 'Text Color', 'E1', 'E2', 'E3'],
+            headers=['Curve Color', 'Marker Color', 'Text Color', 'Line Style', 'E1', 'E2', 'E3'],
             height=250,
             width=880,
             show_row_index=True,  # 显示行号
@@ -1958,7 +1966,7 @@ def interactive_bezier_curve():
         table.readonly_columns(columns=[0, 1, 2], readonly=True)
 
         # 设置列宽
-        for col_idx in range(6):  # 初始6列
+        for col_idx in range(7):  # 现在有7列
             table.column_width(column=col_idx, width=120)
 
         # 设置表格所有显示内容居中对齐（数据区、表头、行号）
@@ -1969,7 +1977,7 @@ def interactive_bezier_curve():
         table.pack(fill=tk.BOTH, expand=True)
 
         # 初始化一行数据
-        table.insert_row(row=['#000000', '#000000', '#000000', 0.0, 0.0, 0.0], idx=0)
+        table.insert_row(row=['#000000', '#000000', '#000000', '', 0.0, 0.0, 0.0], idx=0)
 
         # 设置前3列的背景颜色为其颜色值
         for col_idx in range(3):
@@ -2372,7 +2380,7 @@ def interactive_bezier_curve():
                 table.set_cell_data(row_idx, current_cols, '')
 
             # 更新表头
-            new_header = f'E{current_cols - 2}'
+            new_header = f'E{current_cols - 3}'
             current_headers = list(table.headers())
             current_headers.append(new_header)
             table.headers(current_headers)
@@ -2390,7 +2398,7 @@ def interactive_bezier_curve():
                 无
             """
             num_columns = table.total_columns()
-            new_row_values = ['#000000', '#000000', '#000000'] + [''] * (num_columns - 3)
+            new_row_values = ['#000000', '#000000', '#000000', ''] + [''] * (num_columns - 4)
 
             # 在末尾插入新行
             new_row_idx = table.total_rows()
@@ -2422,17 +2430,17 @@ def interactive_bezier_curve():
             """
             total_cols = table.total_columns()
 
-            # 确保至少保留3列
-            if total_cols <= 3:
-                print("无法删除: 必须至少保留3列")
+            # 确保至少保留4列(3个颜色列+1个Line Style列)
+            if total_cols <= 4:
+                print("无法删除: 必须至少保留4列")
                 return
 
             # 删除最后一列
             table.delete_columns([total_cols - 1])
 
             # 更新表头
-            new_headers = ['Curve Color', 'Marker Color', 'Text Color'] + \
-                         [f'E{i+1}' for i in range(total_cols - 4)]
+            new_headers = ['Curve Color', 'Marker Color', 'Text Color', 'Line Style'] + \
+                         [f'E{i+1}' for i in range(total_cols - 5)]
             table.headers(new_headers)
 
             # 自动调整列宽
@@ -2683,7 +2691,34 @@ def interactive_bezier_curve():
                     normalized_data.append(row_values)
                     max_cols = max(max_cols, len(row_values))
 
-                num_cols = max(3, max_cols)
+                # 检查是否为旧数据格式(没有Line Style列), 如果是则在第3列位置插入空字符串
+                # 判断依据: 如果第4列数据看起来像数字而不是"Solid"/"Dashed", 则认为是旧格式
+                is_old_format = False
+                if max_cols >= 4:
+                    # 检查第4列(索引3)的第一行数据
+                    if len(normalized_data) > 0 and len(normalized_data[0]) > 3:
+                        first_line_style = normalized_data[0][3]
+                        # 如果第4列不是Line Style的有效值, 则认为是旧格式
+                        if first_line_style not in ['Solid', 'Dashed', '', None]:
+                            is_old_format = True
+                elif max_cols == 3:
+                    # 如果只有3列, 肯定是旧格式
+                    is_old_format = True
+
+                # 如果是旧格式, 在每行的第3列位置插入空字符串作为Line Style
+                if is_old_format:
+                    for row_values in normalized_data:
+                        if len(row_values) >= 3:
+                            row_values.insert(3, '')  # 在第3列位置插入空字符串
+                        else:
+                            # 如果行数据不足3列, 先补齐到3列
+                            while len(row_values) < 3:
+                                row_values.append('#000000')
+                            row_values.append('')  # 然后添加Line Style列
+                    # 重新计算最大列数
+                    max_cols = max(len(row) for row in normalized_data)
+
+                num_cols = max(4, max_cols)  # 至少4列(3个颜色列+1个Line Style列)
                 for row_values in normalized_data:
                     if len(row_values) < num_cols:
                         row_values.extend([''] * (num_cols - len(row_values)))
@@ -2693,7 +2728,7 @@ def interactive_bezier_curve():
 
                 # 先设置完整数据，再更新表头和列宽，避免列扩展过程中的越界
                 table.set_sheet_data(normalized_data)
-                headers = ['Curve Color', 'Marker Color', 'Text Color'] + [f'E{i+1}' for i in range(num_cols - 3)]
+                headers = ['Curve Color', 'Marker Color', 'Text Color', 'Line Style'] + [f'E{i+1}' for i in range(num_cols - 4)]
                 table.headers(headers)
                 for col_idx in range(num_cols):
                     table.column_width(column=col_idx, width=100)
