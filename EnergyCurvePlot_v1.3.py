@@ -2809,13 +2809,13 @@ def interactive_bezier_curve():
             del slider_frames[label]
 
         # 创建一个新的 Frame 用于包装每一组 slider 和 entry
-        row_frame = tk.Frame(control_frame,height=10)
-        row_frame.pack(fill='y', padx=5, pady=2,expand=True)
+        row_frame = tk.Frame(control_frame, height=10)
+        row_frame.pack(fill='x', padx=5, pady=2, anchor='w')
 
         #存储滑条引用
         slider_frames[label] = row_frame 
         # 设置标签宽度，确保它们具有一致的宽度
-        label_widget = ttk.Label(row_frame, text=label, width=12)  # 设定固定宽度
+        label_widget = ttk.Label(row_frame, text=label, width=12, anchor='w')  # 设定固定宽度并左对齐
         label_widget.pack(side=tk.LEFT, padx=5, anchor='s')
 
         # 确定分辨率的小数位数
@@ -2884,6 +2884,31 @@ def interactive_bezier_curve():
     # 配置控件所在列的权重
     control_frame.columnconfigure(1, weight=1)
 
+    def auto_adjust_control_spacing(event=None):
+        """
+        根据控制面板高度自动调整每一行间距:
+        1) 所有控件行间距保持一致
+        2) 在窗口高度变化时尽量铺满控制面板
+        """
+        rows = [child for child in control_frame.winfo_children() if child.winfo_manager() == "pack"]
+        if not rows:
+            return
+
+        control_frame.update_idletasks()
+        available_height = control_frame.winfo_height()
+        requested_rows_height = sum(row.winfo_reqheight() for row in rows)
+        extra_height = max(0, available_height - requested_rows_height)
+
+        # n 行对应 n+1 个垂直间隙（顶部、行间、底部）
+        gap_count = len(rows) + 1
+        base_gap, remainder = divmod(extra_height, gap_count)
+        gaps = [base_gap + (1 if i < remainder else 0) for i in range(gap_count)]
+
+        for idx, row in enumerate(rows):
+            top_pad = gaps[0] if idx == 0 else 0
+            bottom_pad = gaps[idx + 1]
+            row.pack_configure(pady=(top_pad, bottom_pad))
+
     # 定义可调节的变量
     adjustment_factor_var = tk.DoubleVar(value=0.0)
     width_factor_var = tk.DoubleVar(value=0.3)
@@ -2915,7 +2940,7 @@ def interactive_bezier_curve():
 
     # 创建形状选择框
     shape_frame = tk.Frame(control_frame)
-    shape_frame.pack(padx=5, pady=2, anchor='w',fill='y',expand=True)
+    shape_frame.pack(padx=5, pady=2, anchor='w', fill='x')
 
     tk.Label(shape_frame, text="Shape:").pack(side=tk.LEFT, padx=5)
     shape_type_var = tk.StringVar(value="line")
@@ -2925,7 +2950,7 @@ def interactive_bezier_curve():
 
     # 创建连接选择框
     connection_frame = tk.Frame(control_frame)
-    connection_frame.pack(padx=5, pady=2, anchor='w',fill='y',expand=True)
+    connection_frame.pack(padx=5, pady=2, anchor='w', fill='x')
 
     tk.Label(connection_frame, text="Connection:").pack(side=tk.LEFT, padx=5)
     connect_type_var = tk.StringVar(value="center")
@@ -2934,7 +2959,7 @@ def interactive_bezier_curve():
 
     # 创建线性选择框
     line_type_frame = tk.Frame(control_frame)
-    line_type_frame.pack(padx=5, pady=2, anchor='w',fill='y',expand=True)
+    line_type_frame.pack(padx=5, pady=2, anchor='w', fill='x')
 
     tk.Label(line_type_frame, text="Line Type:").pack(side=tk.LEFT, padx=5)
     line_type_var = tk.StringVar(value="Solid")
@@ -2943,7 +2968,7 @@ def interactive_bezier_curve():
 
     # 创建能量和标签的连接形式框
     target_layout_frame = tk.Frame(control_frame)
-    target_layout_frame .pack(padx=5, pady=2, anchor='w',fill='y',expand=True)
+    target_layout_frame .pack(padx=5, pady=2, anchor='w', fill='x')
 
     tk.Label(target_layout_frame , text="Label-Energy Layout").pack(side=tk.LEFT, padx=5)
     target_layout_var = tk.StringVar(value="sperate")
@@ -2952,7 +2977,7 @@ def interactive_bezier_curve():
 
     # 创建标签位置选择框
     target_location_frame = tk.Frame(control_frame)
-    target_location_frame .pack(padx=5, pady=2, anchor='w',fill='y',expand=True)
+    target_location_frame .pack(padx=5, pady=2, anchor='w', fill='x')
 
     tk.Label(target_location_frame , text="Target Location").pack(side=tk.LEFT, padx=5)
     target_location_var = tk.StringVar(value="c")
@@ -2964,27 +2989,27 @@ def interactive_bezier_curve():
 
     # 使用一个子Frame排列选项框
     options_frame = tk.Frame(control_frame)
-    options_frame.pack(fill=tk.X, expand=True)
+    options_frame.pack(fill=tk.X, anchor='w')
 
     show_marker_var = tk.BooleanVar(value=False)
     checkbutton = tk.Checkbutton(options_frame, text="Show Marker", variable=show_marker_var, command=update_plot)
-    checkbutton.pack(side=tk.LEFT,padx=5, pady=2, anchor='w',fill='y')
+    checkbutton.pack(side=tk.LEFT, padx=5, pady=2, anchor='w')
 
     grid_var = tk.BooleanVar(value=True)
     grid_checkbutton = tk.Checkbutton(options_frame, text="Show Grid", variable=grid_var, command=update_plot)
-    grid_checkbutton.pack(side=tk.LEFT,padx=5, pady=2, anchor='w',fill='y')
+    grid_checkbutton.pack(side=tk.LEFT, padx=5, pady=2, anchor='w')
 
     # 创建新的一行用于Show Numbers和Show Targets
     options_frame_2 = tk.Frame(control_frame)
-    options_frame_2.pack(fill=tk.X, expand=True)
+    options_frame_2.pack(fill=tk.X, anchor='w')
 
     show_numbers_var = tk.BooleanVar(value=True)
     numbers_checkbutton = tk.Checkbutton(options_frame_2, text="Show Numbers", variable=show_numbers_var, command=update_plot)
-    numbers_checkbutton.pack(side=tk.LEFT,padx=5, pady=2, anchor='w',fill='y')
+    numbers_checkbutton.pack(side=tk.LEFT, padx=5, pady=2, anchor='w')
 
     show_targets_var = tk.BooleanVar(value=True)
     targets_checkbutton = tk.Checkbutton(options_frame_2, text="Show Targets", variable=show_targets_var, command=update_plot)
-    targets_checkbutton.pack(side=tk.LEFT,padx=5, pady=2, anchor='w',fill='y')
+    targets_checkbutton.pack(side=tk.LEFT, padx=5, pady=2, anchor='w')
 
 
     def hex_to_rgb(hex_color):
@@ -3468,32 +3493,36 @@ def interactive_bezier_curve():
 
     # 创建第一行按钮frame
     buttons_frame_1 = tk.Frame(control_frame)
-    buttons_frame_1.pack(fill=tk.X, expand=True, pady=2)
+    buttons_frame_1.pack(anchor='w', pady=2)
 
     export_button = tk.Button(buttons_frame_1, text="Show All", command=show_all)
-    export_button.pack(side=tk.LEFT, padx=5, pady=2)
+    export_button.pack(side=tk.LEFT, padx=3, pady=2)
 
     export_button = tk.Button(buttons_frame_1, text="Open Table", command=re_create_table_window)
-    export_button.pack(side=tk.LEFT, padx=5, pady=2)
+    export_button.pack(side=tk.LEFT, padx=3, pady=2)
 
     # 添加保存配置按钮
     save_config_button = tk.Button(buttons_frame_1, text="Save Config", command=save_config)
-    save_config_button.pack(side=tk.LEFT, padx=5, pady=2)
+    save_config_button.pack(side=tk.LEFT, padx=3, pady=2)
 
     # 添加加载配置按钮
     load_config_button = tk.Button(buttons_frame_1, text="Load Config", command=load_config)
-    load_config_button.pack(side=tk.LEFT, padx=5, pady=2)
+    load_config_button.pack(side=tk.LEFT, padx=3, pady=2)
 
     # 创建新的一行用于Export CDXML按钮
     export_frame = tk.Frame(control_frame)
-    export_frame.pack(fill=tk.X, expand=True, pady=2)
+    export_frame.pack(anchor='w', pady=2)
 
     # 添加读取CDXML风格按钮
     load_style_button = tk.Button(export_frame, text="Load CDXML Style", command=load_cdxml_style)
-    load_style_button.pack(side=tk.LEFT, padx=5, pady=2)
+    load_style_button.pack(side=tk.LEFT, padx=3, pady=2)
 
     export_cdxml_button = tk.Button(export_frame, text="Export CDXML", command=export_cdxml)
-    export_cdxml_button.pack(side=tk.LEFT, padx=5, pady=2)
+    export_cdxml_button.pack(side=tk.LEFT, padx=3, pady=2)
+
+    # 启用控件行间距的自动调整
+    control_frame.bind("<Configure>", auto_adjust_control_spacing)
+    root.after_idle(auto_adjust_control_spacing)
 
     root.mainloop()
 
